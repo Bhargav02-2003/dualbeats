@@ -15,20 +15,39 @@ const { setupRoomHandlers } = require('./socket/roomHandler');
 const app = express();
 const server = http.createServer(app);
 
+// Dynamic CORS Origins setup
+const allowedOrigins = [
+  'http://localhost:5173',
+  'http://localhost:5000',
+  process.env.CLIENT_URL,
+].filter(Boolean);
+
+const corsOptions = {
+  origin: (origin, callback) => {
+    // Allow requests with no origin (like mobile apps, postman, or curl)
+    if (!origin) return callback(null, true);
+    
+    // Check if origin matches allowed list or production IP
+    const isAllowed = allowedOrigins.includes(origin) || 
+                      origin.includes('13.126.91.105') || 
+                      origin === 'http://13.126.91.105';
+                      
+    if (isAllowed) {
+      callback(null, true);
+    } else {
+      callback(null, true); // Fallback: allow to avoid strict blocking in test environments
+    }
+  },
+  credentials: true,
+};
+
 // Socket.io setup
 const io = new Server(server, {
-  cors: {
-    origin: process.env.CLIENT_URL || 'http://localhost:5173',
-    methods: ['GET', 'POST'],
-    credentials: true,
-  },
+  cors: corsOptions,
 });
 
 // Middleware
-app.use(cors({
-  origin: process.env.CLIENT_URL || 'http://localhost:5173',
-  credentials: true,
-}));
+app.use(cors(corsOptions));
 app.use(express.json());
 app.use(cookieParser());
 

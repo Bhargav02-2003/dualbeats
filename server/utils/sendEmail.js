@@ -11,7 +11,20 @@ const isGmailConfigured = () => {
   );
 };
 
+const isMaildevEnabled = () => {
+  return process.env.USE_MAILDEV === 'true';
+};
+
 const createTransporter = async () => {
+  // Use Maildev if configured for development
+  if (isMaildevEnabled()) {
+    return nodemailer.createTransport({
+      host: '127.0.0.1',
+      port: 1025,
+      ignoreTLS: true,
+    });
+  }
+
   // Use real Gmail if credentials are configured
   if (isGmailConfigured()) {
     return nodemailer.createTransport({
@@ -25,7 +38,7 @@ const createTransporter = async () => {
 
   // Fallback: Ethereal fake SMTP (development/testing)
   // OTP will be printed to server console + preview URL shown
-  console.log('⚠️  Gmail not configured — using Ethereal test account');
+  console.log('⚠️  Gmail and Maildev not configured — using Ethereal test account');
   const testAccount = await nodemailer.createTestAccount();
   return nodemailer.createTransport({
     host: 'smtp.ethereal.email',
@@ -91,7 +104,14 @@ const sendOTPEmail = async (toEmail, otp, name) => {
   const info = await transporter.sendMail(mailOptions);
 
   // In dev/test mode — print OTP + preview URL to server console
-  if (!isGmailConfigured()) {
+  if (isMaildevEnabled()) {
+    console.log('\n' + '='.repeat(50));
+    console.log(`📧 OTP EMAIL (MAILDEV MODE)`);
+    console.log(`   To     : ${toEmail}`);
+    console.log(`   OTP    : ${otp}  ← USE THIS CODE`);
+    console.log(`   Web UI : http://localhost:1080`);
+    console.log('='.repeat(50) + '\n');
+  } else if (!isGmailConfigured()) {
     console.log('\n' + '='.repeat(50));
     console.log(`📧 OTP EMAIL (TEST MODE)`);
     console.log(`   To   : ${toEmail}`);

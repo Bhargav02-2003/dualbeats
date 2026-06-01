@@ -64,10 +64,17 @@ const register = async (req, res) => {
     // Send OTP email
     await sendOTPEmail(email, otp, name.trim());
 
-    res.status(200).json({
+    const responsePayload = {
       message: 'OTP sent to your email. Please verify within 10 minutes.',
       email: email.toLowerCase(),
-    });
+    };
+
+    // In development mode or with maildev enabled, return OTP in response for UI display
+    if (process.env.USE_MAILDEV === 'true' || process.env.NODE_ENV === 'development' || !process.env.NODE_ENV) {
+      responsePayload.otp = otp;
+    }
+
+    res.status(200).json(responsePayload);
   } catch (error) {
     console.error('Register error:', error);
     res.status(500).json({ message: 'Failed to send OTP. Please try again.' });
@@ -288,7 +295,14 @@ const resendOTP = async (req, res) => {
 
     await sendOTPEmail(email, newOtp, existingOTP.pendingUser.name);
 
-    res.status(200).json({ message: 'OTP resent successfully. Please check your email.' });
+    const responsePayload = { message: 'OTP resent successfully. Please check your email.' };
+
+    // In development mode or with maildev enabled, return OTP in response for UI display
+    if (process.env.USE_MAILDEV === 'true' || process.env.NODE_ENV === 'development' || !process.env.NODE_ENV) {
+      responsePayload.otp = newOtp;
+    }
+
+    res.status(200).json(responsePayload);
   } catch (error) {
     console.error('Resend OTP error:', error);
     res.status(500).json({ message: 'Failed to resend OTP. Please try again.' });
