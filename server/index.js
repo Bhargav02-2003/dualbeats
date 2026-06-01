@@ -27,10 +27,9 @@ const corsOptions = {
     // Allow requests with no origin (like mobile apps, postman, or curl)
     if (!origin) return callback(null, true);
     
-    // Check if origin matches allowed list or production IP
+    // Check if origin matches allowed list or production IP subnet
     const isAllowed = allowedOrigins.includes(origin) || 
-                      origin.includes('13.126.91.105') || 
-                      origin === 'http://13.126.91.105';
+                      origin.includes('13.126.91.');
                       
     if (isAllowed) {
       callback(null, true);
