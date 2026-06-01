@@ -38,9 +38,15 @@ const Register = () => {
     setServerError('');
 
     try {
-      await register(form.name.trim(), form.email.trim().toLowerCase(), form.password);
-      // Pass email to OTP page via state
-      navigate('/verify-otp', { state: { email: form.email.trim().toLowerCase(), name: form.name.trim() } });
+      const response = await register(form.name.trim(), form.email.trim().toLowerCase(), form.password);
+      // Pass email and development OTP to OTP page via state
+      navigate('/verify-otp', {
+        state: {
+          email: form.email.trim().toLowerCase(),
+          name: form.name.trim(),
+          otp: response?.otp
+        }
+      });
     } catch (err) {
       setServerError(err.response?.data?.message || 'Registration failed. Please try again.');
     } finally {

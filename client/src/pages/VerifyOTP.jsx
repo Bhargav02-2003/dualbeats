@@ -13,6 +13,7 @@ const VerifyOTP = () => {
   const name = location.state?.name || 'User';
 
   const [digits, setDigits] = useState(Array(OTP_LENGTH).fill(''));
+  const [devOtp, setDevOtp] = useState(location.state?.otp || '');
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [loading, setLoading] = useState(false);
@@ -113,8 +114,11 @@ const VerifyOTP = () => {
     setSuccess('');
 
     try {
-      await resendOTP(email);
+      const response = await resendOTP(email);
       setSuccess('A new OTP has been sent to your email.');
+      if (response?.otp) {
+        setDevOtp(response.otp);
+      }
       setCountdown(60);
       setCanResend(false);
       setDigits(Array(OTP_LENGTH).fill(''));
@@ -160,6 +164,18 @@ const VerifyOTP = () => {
             <div className="bg-success bg-opacity-10 border border-success border-opacity-30 text-success rounded-xl p-3 mb-5 text-sm flex items-center gap-2">
               <span>✅</span>
               <span>{success}</span>
+            </div>
+          )}
+
+          {devOtp && (
+            <div className="bg-accent bg-opacity-10 border border-accent border-opacity-30 text-accentLight rounded-xl p-4 mb-5 text-sm flex flex-col items-center gap-2 text-center animate-pulse">
+              <span className="font-semibold uppercase tracking-wider text-xs">🛠️ Developer OTP Bypass</span>
+              <div className="text-2xl font-black tracking-widest text-white mt-1">
+                {devOtp}
+              </div>
+              <p className="text-xs text-text-muted mt-1">
+                This box is only visible during local testing & development.
+              </p>
             </div>
           )}
 
