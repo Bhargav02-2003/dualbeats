@@ -18,17 +18,22 @@ const generateRefreshToken = (userId) => {
  * Set both tokens in httpOnly cookies
  */
 const setTokenCookies = (res, accessToken, refreshToken) => {
+  // Use 'lax' for cross-origin EC2 setup (frontend & backend on different IPs)
+  // 'strict' would block cookies entirely in cross-origin requests
+  const isProduction = process.env.NODE_ENV === 'production';
+  const sameSite = isProduction ? 'lax' : 'lax';
+
   res.cookie('accessToken', accessToken, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'strict',
+    secure: false, // Must be false for HTTP (no HTTPS on EC2 plain IP)
+    sameSite,
     maxAge: 15 * 60 * 1000, // 15 minutes
   });
 
   res.cookie('refreshToken', refreshToken, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'strict',
+    secure: false, // Must be false for HTTP (no HTTPS on EC2 plain IP)
+    sameSite,
     maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
   });
 };
