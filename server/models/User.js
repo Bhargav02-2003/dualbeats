@@ -1,6 +1,15 @@
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 
+const savedSongSchema = new mongoose.Schema({
+  videoId:     { type: String, required: true },
+  title:       { type: String, required: true },
+  channelName: { type: String, default: 'Unknown Artist' },
+  thumbnail:   { type: String, default: '' },
+  duration:    { type: String, default: '' },
+  savedAt:     { type: Date, default: Date.now },
+});
+
 const userSchema = new mongoose.Schema(
   {
     name: {
@@ -27,6 +36,7 @@ const userSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    savedSongs: [savedSongSchema],
   },
   { timestamps: true }
 );

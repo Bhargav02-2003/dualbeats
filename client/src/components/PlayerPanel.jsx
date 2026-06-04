@@ -14,49 +14,62 @@ const YT_STATES = {
 };
 
 const PlayerPanel = ({
-  playerId,          // 'player1' | 'player2'
-  title,             // 'Player 1' | 'Player 2'
-  accentColor,       // CSS color string for accent
-  socket,            // Socket.io instance (optional)
-  roomCode,          // Room code (optional)
-  syncedVideoId,     // Video ID pushed from room sync
-  syncedAction,      // { type: 'play'|'pause'|'seek', currentTime } from sync
+  socket,
+  roomCode,
+  syncedVideoId,
+  syncedAction,
+  externalVideo,
+  savedVideoIds,
+  onSaveToggle,
+  onAddToQueue,    // fn(video) — add song to queue
+  onVideoEnded,    // fn() — called when song ends, triggers next in queue
 }) => {
+  const playerId = 'player1';
   const [searchResults, setSearchResults] = useState([]);
   const [searchLoading, setSearchLoading] = useState(false);
-  const [activeVideo, setActiveVideo] = useState(null); // { videoId, title, thumbnail, channelName }
+  const [activeVideo, setActiveVideo] = useState(null);
   const [playerInstance, setPlayerInstance] = useState(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   const [volume, setVolume] = useState(70);
 
   const lastSyncedVideoRef = useRef(null);
+  const volumeRef = useRef(70);
+  const isMutedRef = useRef(false);
+  React.useEffect(() => { volumeRef.current = volume; }, [volume]);
+  React.useEffect(() => { isMutedRef.current = isMuted; }, [isMuted]);
 
-  // Handle sync events from room
+  // Handle external video (from Library or Queue) — LOCAL only
+  React.useEffect(() => {
+    if (!externalVideo) return;
+    setActiveVideo(externalVideo);
+    setSearchResults([]);
+  }, [externalVideo]);
+
+  // Handle room sync — video change
   React.useEffect(() => {
     if (!syncedVideoId || syncedVideoId === lastSyncedVideoRef.current) return;
     lastSyncedVideoRef.current = syncedVideoId;
-    // Video change from room — update active video if different
     if (syncedVideoId !== activeVideo?.videoId) {
       setActiveVideo((prev) => ({ ...prev, videoId: syncedVideoId }));
     }
   }, [syncedVideoId]);
 
+  // Handle room sync — play/pause/seek with latency compensation
   React.useEffect(() => {
     if (!syncedAction || !playerInstance) return;
     try {
+      const delaySeconds = syncedAction.serverTs
+        ? (Date.now() - syncedAction.serverTs) / 1000
+        : 0;
       if (syncedAction.type === 'play') {
-        if (syncedAction.currentTime !== undefined) {
-          playerInstance.seekTo(syncedAction.currentTime, true);
-        }
+        playerInstance.seekTo((syncedAction.currentTime || 0) + delaySeconds, true);
         playerInstance.playVideo();
       } else if (syncedAction.type === 'pause') {
-        if (syncedAction.currentTime !== undefined) {
-          playerInstance.seekTo(syncedAction.currentTime, true);
-        }
+        if (syncedAction.currentTime !== undefined) playerInstance.seekTo(syncedAction.currentTime, true);
         playerInstance.pauseVideo();
       } else if (syncedAction.type === 'seek') {
-        playerInstance.seekTo(syncedAction.currentTime, true);
+        playerInstance.seekTo((syncedAction.currentTime || 0) + delaySeconds, true);
       }
     } catch {}
   }, [syncedAction]);
@@ -64,15 +77,14 @@ const PlayerPanel = ({
   const handlePlayerReady = useCallback((player) => {
     setPlayerInstance(player);
     try {
-      player.setVolume(volume);
-      if (isMuted) player.mute();
+      player.setVolume(volumeRef.current);
+      if (isMutedRef.current) player.mute();
     } catch {}
-  }, [volume, isMuted]);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleStateChange = useCallback(({ state, currentTime }) => {
     if (state === YT_STATES.PLAYING) {
       setIsPlaying(true);
-      // Emit to room
       if (socket && roomCode) {
         socket.emit('room:play', { roomCode, videoId: activeVideo?.videoId, currentTime });
       }
@@ -81,13 +93,16 @@ const PlayerPanel = ({
       if (socket && roomCode) {
         socket.emit('room:pause', { roomCode, currentTime });
       }
+    } else if (state === YT_STATES.ENDED) {
+      setIsPlaying(false);
+      // Auto-play next from queue
+      if (onVideoEnded) onVideoEnded();
     }
-  }, [socket, roomCode, activeVideo]);
+  }, [socket, roomCode, activeVideo, onVideoEnded]);
 
   const handleSelectVideo = useCallback((video) => {
     setActiveVideo(video);
     setSearchResults([]);
-    // Emit video change to room
     if (socket && roomCode) {
       socket.emit('room:video-change', { roomCode, videoId: video.videoId, title: video.title });
     }
@@ -97,24 +112,16 @@ const PlayerPanel = ({
     if (!playerInstance) return;
     try {
       const state = playerInstance.getPlayerState();
-      if (state === YT_STATES.PLAYING) {
-        playerInstance.pauseVideo();
-      } else {
-        playerInstance.playVideo();
-      }
+      if (state === YT_STATES.PLAYING) playerInstance.pauseVideo();
+      else playerInstance.playVideo();
     } catch {}
   };
 
   const handleMute = () => {
     if (!playerInstance) return;
     try {
-      if (isMuted) {
-        playerInstance.unMute();
-        setIsMuted(false);
-      } else {
-        playerInstance.mute();
-        setIsMuted(true);
-      }
+      if (isMuted) { playerInstance.unMute(); setIsMuted(false); }
+      else { playerInstance.mute(); setIsMuted(true); }
     } catch {}
   };
 
@@ -124,38 +131,14 @@ const PlayerPanel = ({
     if (playerInstance) {
       try {
         playerInstance.setVolume(vol);
-        if (vol === 0) {
-          playerInstance.mute();
-          setIsMuted(true);
-        } else if (isMuted) {
-          playerInstance.unMute();
-          setIsMuted(false);
-        }
+        if (vol === 0) { playerInstance.mute(); setIsMuted(true); }
+        else if (isMuted) { playerInstance.unMute(); setIsMuted(false); }
       } catch {}
     }
   };
 
-  const isPlayer1 = playerId === 'player1';
-
   return (
-    <div className="player-panel flex-1 min-h-0 animate-fade-in">
-      {/* Panel header */}
-      <div
-        className="px-4 py-3 border-b border-border flex items-center gap-2"
-        style={{ background: `linear-gradient(135deg, ${isPlayer1 ? 'rgba(108,92,231,0.15)' : 'rgba(0,184,148,0.12)'}, transparent)` }}
-      >
-        <div
-          className="w-2.5 h-2.5 rounded-full"
-          style={{ backgroundColor: isPlayer1 ? '#6c5ce7' : '#00b894' }}
-        ></div>
-        <h2 className="text-text-primary font-bold text-sm">{title}</h2>
-        {activeVideo && (
-          <span className="ml-auto text-text-muted text-xs truncate max-w-[180px]" title={activeVideo.title}>
-            {activeVideo.title}
-          </span>
-        )}
-      </div>
-
+    <div className="player-panel flex flex-col animate-fade-in">
       {/* Search */}
       <SearchBar
         playerId={playerId}
@@ -163,7 +146,7 @@ const PlayerPanel = ({
         onLoading={setSearchLoading}
       />
 
-      {/* Search Results — overlays player when shown */}
+      {/* Search Results — shown above player */}
       {(searchResults.length > 0 || searchLoading) && (
         <SearchResults
           results={searchResults}
@@ -171,38 +154,35 @@ const PlayerPanel = ({
           onSelect={handleSelectVideo}
           activeVideoId={activeVideo?.videoId}
           playerId={playerId}
+          savedVideoIds={savedVideoIds}
+          onSaveToggle={onSaveToggle}
+          onAddToQueue={onAddToQueue}
         />
       )}
 
-      {/* YouTube Player */}
-      {(!searchResults.length && !searchLoading) && (
-        <div className="flex-1 px-4">
-          <YouTubePlayer
-            playerId={playerId}
-            videoId={activeVideo?.videoId || null}
-            onPlayerReady={handlePlayerReady}
-            onStateChange={handleStateChange}
-          />
-        </div>
-      )}
+      {/* YouTube Player — always mounted so song keeps playing during search */}
+      <div className={`flex-1 px-4 ${(searchResults.length > 0 || searchLoading) ? 'hidden' : ''}`}>
+        <YouTubePlayer
+          playerId={playerId}
+          videoId={activeVideo?.videoId || null}
+          onPlayerReady={handlePlayerReady}
+          onStateChange={handleStateChange}
+        />
+      </div>
 
-      {/* Controls bar */}
+      {/* Now Playing + Controls */}
       {activeVideo && (
-        <div className="mt-auto border-t border-border px-4 py-3">
-          {/* Now playing */}
+        <div className="border-t border-border px-4 py-3">
           <div className="mb-3">
             <p className="text-text-primary text-xs font-semibold truncate">{activeVideo.title}</p>
             <p className="text-text-muted text-xs truncate">{activeVideo.channelName}</p>
           </div>
-
-          {/* Controls */}
           <div className="flex items-center gap-3">
             {/* Play/Pause */}
             <button
-              id={`${playerId}-playpause-btn`}
+              id="player1-playpause-btn"
               onClick={handlePlayPause}
-              className="w-9 h-9 rounded-full flex items-center justify-center transition-all duration-150 hover:scale-110"
-              style={{ background: isPlayer1 ? '#6c5ce7' : '#00b894' }}
+              className="w-9 h-9 rounded-full flex items-center justify-center transition-all duration-150 hover:scale-110 bg-accent"
               title={isPlaying ? 'Pause' : 'Play'}
             >
               {isPlaying ? (
@@ -218,7 +198,7 @@ const PlayerPanel = ({
 
             {/* Mute */}
             <button
-              id={`${playerId}-mute-btn`}
+              id="player1-mute-btn"
               onClick={handleMute}
               className="text-text-muted hover:text-text-primary transition-colors"
               title={isMuted ? 'Unmute' : 'Mute'}
@@ -237,7 +217,7 @@ const PlayerPanel = ({
 
             {/* Volume slider */}
             <input
-              id={`${playerId}-volume-slider`}
+              id="player1-volume-slider"
               type="range"
               min="0"
               max="100"
@@ -245,11 +225,10 @@ const PlayerPanel = ({
               onChange={handleVolumeChange}
               className="flex-1"
               style={{
-                background: `linear-gradient(to right, ${isPlayer1 ? '#6c5ce7' : '#00b894'} ${isMuted ? 0 : volume}%, #2a2a2a ${isMuted ? 0 : volume}%)`
+                background: `linear-gradient(to right, #6c5ce7 ${isMuted ? 0 : volume}%, #2a2a2a ${isMuted ? 0 : volume}%)`
               }}
               title={`Volume: ${isMuted ? 0 : volume}%`}
             />
-
             <span className="text-text-muted text-xs w-7 text-right">
               {isMuted ? '0' : volume}
             </span>

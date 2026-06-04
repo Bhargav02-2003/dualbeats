@@ -10,6 +10,7 @@ dotenv.config();
 
 const authRoutes = require('./routes/auth');
 const youtubeRoutes = require('./routes/youtube');
+const savedRoutes = require('./routes/saved');
 const { setupRoomHandlers } = require('./socket/roomHandler');
 
 const app = express();
@@ -53,6 +54,7 @@ app.use(cookieParser());
 // Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/youtube', youtubeRoutes);
+app.use('/api/saved', savedRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {

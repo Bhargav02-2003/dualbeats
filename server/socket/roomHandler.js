@@ -87,17 +87,17 @@ const setupRoomHandlers = (io) => {
 
     // ─── Play Event ────────────────────────────────────────────────
     socket.on('room:play', ({ roomCode, videoId, currentTime }) => {
-      socket.to(roomCode).emit('room:play', { videoId, currentTime });
+      socket.to(roomCode).emit('room:play', { videoId, currentTime, serverTs: Date.now() });
     });
 
     // ─── Pause Event ───────────────────────────────────────────────
     socket.on('room:pause', ({ roomCode, currentTime }) => {
-      socket.to(roomCode).emit('room:pause', { currentTime });
+      socket.to(roomCode).emit('room:pause', { currentTime, serverTs: Date.now() });
     });
 
     // ─── Seek Event ────────────────────────────────────────────────
     socket.on('room:seek', ({ roomCode, currentTime }) => {
-      socket.to(roomCode).emit('room:seek', { currentTime });
+      socket.to(roomCode).emit('room:seek', { currentTime, serverTs: Date.now() });
     });
 
     // ─── Video Change Event ────────────────────────────────────────
