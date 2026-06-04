@@ -183,9 +183,7 @@ const YouTubePlayer = ({ playerId, videoId, onPlayerReady, onStateChange }) => {
 
   return (
     <div className="yt-player-wrapper w-full">
-      <div ref={containerRef} className="w-full h-full">
-        <div id={`yt-player-${playerId}`}></div>
-      </div>
+      <div ref={containerRef} className="w-full h-full"></div>
     </div>
   );
 };
