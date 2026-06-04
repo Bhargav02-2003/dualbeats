@@ -79,12 +79,14 @@ const YouTubePlayer = ({ playerId, videoId, onPlayerReady, onStateChange }) => {
         height: '100%',
         width: '100%',
         videoId: vid,
+        host: 'https://www.youtube-nocookie.com',
         playerVars: {
           autoplay: 1,
           controls: 1,
           rel: 0,
           modestbranding: 1,
           playsinline: 1,
+          origin: window.location.origin,
         },
         events: {
           onReady: (e) => {
