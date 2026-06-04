@@ -36,6 +36,7 @@ const PlayerPanel = ({
   const lastSyncedVideoRef = useRef(null);
   const volumeRef = useRef(70);
   const isMutedRef = useRef(false);
+  const expectingSyncRef = useRef(null);
   React.useEffect(() => { volumeRef.current = volume; }, [volume]);
   React.useEffect(() => { isMutedRef.current = isMuted; }, [isMuted]);
 
@@ -62,6 +63,12 @@ const PlayerPanel = ({
       const delaySeconds = syncedAction.serverTs
         ? (Date.now() - syncedAction.serverTs) / 1000
         : 0;
+      
+      expectingSyncRef.current = {
+        type: syncedAction.type,
+        timestamp: Date.now()
+      };
+
       if (syncedAction.type === 'play') {
         playerInstance.seekTo((syncedAction.currentTime || 0) + delaySeconds, true);
         playerInstance.playVideo();
@@ -83,6 +90,19 @@ const PlayerPanel = ({
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleStateChange = useCallback(({ state, currentTime }) => {
+    // Prevent sync loop/stuttering from programmatic player state changes
+    const sync = expectingSyncRef.current;
+    if (sync && Date.now() - sync.timestamp < 2000) {
+      if (state === YT_STATES.PLAYING && (sync.type === 'play' || sync.type === 'seek')) {
+        setIsPlaying(true);
+        return;
+      }
+      if (state === YT_STATES.PAUSED && (sync.type === 'pause' || sync.type === 'seek')) {
+        setIsPlaying(false);
+        return;
+      }
+    }
+
     if (state === YT_STATES.PLAYING) {
       setIsPlaying(true);
       if (socket && roomCode) {

@@ -53,6 +53,18 @@ const setupRoomHandlers = (io) => {
         return;
       }
 
+      if (room.deleteTimeout) {
+        clearTimeout(room.deleteTimeout);
+        room.deleteTimeout = null;
+        console.log(`⏱️ Cancelled delete timeout for room ${roomCode}`);
+      }
+
+      // If the host is no longer in the room (or not set), reassign to this socket
+      if (!room.hostId || !room.users.has(room.hostId)) {
+        room.hostId = socket.id;
+        room.hostName = userName || 'Host';
+      }
+
       room.users.add(socket.id);
       socket.join(roomCode);
       socket.data.roomCode = roomCode;
@@ -128,9 +140,14 @@ const leaveRoom = (io, socket, roomCode) => {
   socket.data.roomCode = null;
 
   if (room.users.size === 0) {
-    // Delete empty room
-    activeRooms.delete(roomCode);
-    console.log(`🗑️ Room ${roomCode} deleted (empty)`);
+    // Delete empty room after a grace period of 10 seconds to allow for page reloads/reconnects
+    if (room.deleteTimeout) {
+      clearTimeout(room.deleteTimeout);
+    }
+    room.deleteTimeout = setTimeout(() => {
+      activeRooms.delete(roomCode);
+      console.log(`🗑️ Room ${roomCode} deleted (empty after grace period)`);
+    }, 10000);
   } else {
     // Notify remaining users
     const newHostId = room.users.size > 0 ? [...room.users][0] : null;

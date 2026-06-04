@@ -153,6 +153,40 @@ const Home = () => {
     return () => s.disconnect();
   }, [showNotification]);
 
+  // ── Auto-rejoin Room ────────────────────────────────────────────────
+  useEffect(() => {
+    if (!socket || !user) return;
+
+    const handleConnect = () => {
+      const storedRoomCode = localStorage.getItem('activeRoomCode');
+      if (storedRoomCode) {
+        console.log('Attempting to auto-rejoin room:', storedRoomCode);
+        socket.emit('room:join', { roomCode: storedRoomCode, userName: user?.name }, (res) => {
+          if (res.success) {
+            setRoomCode(storedRoomCode);
+            setRoomInfo({ code: storedRoomCode, userCount: res.userCount });
+            showNotification(`Rejoined room ${storedRoomCode}!`);
+          } else {
+            console.log('Failed to auto-rejoin:', res.message);
+            localStorage.removeItem('activeRoomCode');
+            setRoomCode('');
+            setRoomInfo(null);
+            showNotification('Could not rejoin the previous room.');
+          }
+        });
+      }
+    };
+
+    if (socket.connected) {
+      handleConnect();
+    }
+
+    socket.on('connect', handleConnect);
+    return () => {
+      socket.off('connect', handleConnect);
+    };
+  }, [socket, user, showNotification]);
+
   // ── Room actions ─────────────────────────────────────────────────────
   const confirmCreateRoom = () => {
     if (!socketRef.current) return;
@@ -162,6 +196,7 @@ const Home = () => {
       if (res.success) {
         setCreatedCode(res.roomCode); setRoomCode(res.roomCode);
         setRoomInfo({ code: res.roomCode, userCount: 1 }); setModal(MODAL.CREATED);
+        localStorage.setItem('activeRoomCode', res.roomCode);
       } else { setModal(MODAL.NONE); showNotification('Failed to create room.'); }
     });
   };
@@ -176,6 +211,7 @@ const Home = () => {
       if (res.success) {
         setRoomCode(code); setRoomInfo({ code, userCount: res.userCount });
         setModal(MODAL.NONE); showNotification(`Joined room ${code}!`);
+        localStorage.setItem('activeRoomCode', code);
       } else { setJoinError(res.message || 'Failed to join.'); }
     });
   };
@@ -183,6 +219,7 @@ const Home = () => {
   const handleLeaveRoom = () => {
     if (socketRef.current && roomCode) socketRef.current.emit('room:leave');
     setRoomCode(''); setRoomInfo(null); setSyncedAction(null); setSyncedVideoId(null);
+    localStorage.removeItem('activeRoomCode');
     showNotification('Left the room.');
   };
 
