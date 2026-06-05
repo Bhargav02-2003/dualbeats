@@ -1,4 +1,4 @@
-// Active rooms stored in memory: Map<roomCode, { users: Set<socketId>, hostId: string }>
+// Active rooms stored in memory: Map<roomCode, { users: Set<socketId>, hostId, maxUsers, isPlaying, lastPosition, lastPositionUpdate, currentVideo }>
 const activeRooms = new Map();
 
 /**
@@ -22,26 +22,34 @@ const setupRoomHandlers = (io) => {
     console.log(`🔌 Socket connected: ${socket.id}`);
 
     // ─── Create Room ───────────────────────────────────────────────
-    socket.on('room:create', ({ userName }, callback) => {
+    socket.on('room:create', ({ userName, maxUsers }, callback) => {
       let roomCode;
       // Ensure unique code
       do {
         roomCode = generateRoomCode();
       } while (activeRooms.has(roomCode));
 
+      // Validate maxUsers — only allow preset values, default to 5
+      const limit = [1, 3, 5, 10].includes(Number(maxUsers)) ? Number(maxUsers) : 5;
+
       activeRooms.set(roomCode, {
         users: new Set([socket.id]),
         hostId: socket.id,
         hostName: userName || 'Host',
+        maxUsers: limit,
+        isPlaying: false,
+        lastPosition: 0,
+        lastPositionUpdate: 0,
+        currentVideo: null,
       });
 
       socket.join(roomCode);
       socket.data.roomCode = roomCode;
       socket.data.userName = userName;
 
-      console.log(`🏠 Room created: ${roomCode} by ${socket.id}`);
+      console.log(`🏠 Room created: ${roomCode} by ${socket.id} (max: ${limit})`);
 
-      if (callback) callback({ success: true, roomCode });
+      if (callback) callback({ success: true, roomCode, maxUsers: limit });
     });
 
     // ─── Join Room ─────────────────────────────────────────────────
@@ -51,6 +59,17 @@ const setupRoomHandlers = (io) => {
       if (!room) {
         if (callback) callback({ success: false, message: 'Room not found. Check the code and try again.' });
         return;
+      }
+
+      // ─ Capacity check (skip if socket already in room, e.g. reconnect)
+      if (!room.users.has(socket.id) && room.maxUsers) {
+        if (room.users.size >= room.maxUsers) {
+          const msg = room.maxUsers === 1
+            ? 'This is a private solo room — no one else can join.'
+            : `This room is full (${room.maxUsers} people max). Try another room.`;
+          if (callback) callback({ success: false, message: msg });
+          return;
+        }
       }
 
       if (room.deleteTimeout) {
@@ -77,14 +96,24 @@ const setupRoomHandlers = (io) => {
         userCount: room.users.size,
       });
 
-      console.log(`👤 ${socket.id} joined room: ${roomCode}`);
+      console.log(`👤 ${socket.id} joined room: ${roomCode} (${room.users.size}/${room.maxUsers || '∞'})`);
+
+      // Calculate synchronized playback position for joining user
+      let currentProgress = room.lastPosition || 0;
+      if (room.isPlaying && room.lastPositionUpdate) {
+        currentProgress += (Date.now() - room.lastPositionUpdate) / 1000;
+      }
 
       if (callback) {
         callback({
           success: true,
           roomCode,
           userCount: room.users.size,
+          maxUsers: room.maxUsers || null,
           hostName: room.hostName,
+          currentVideo: room.currentVideo,
+          isPlaying: room.isPlaying,
+          currentTime: currentProgress,
         });
       }
     });
@@ -99,22 +128,49 @@ const setupRoomHandlers = (io) => {
 
     // ─── Play Event ────────────────────────────────────────────────
     socket.on('room:play', ({ roomCode, videoId, currentTime }) => {
+      const room = activeRooms.get(roomCode);
+      if (room) {
+        room.isPlaying = true;
+        room.lastPosition = currentTime || 0;
+        room.lastPositionUpdate = Date.now();
+        if (videoId) {
+          room.currentVideo = { videoId, title: room.currentVideo?.title || '' };
+        }
+      }
       socket.to(roomCode).emit('room:play', { videoId, currentTime, serverTs: Date.now() });
     });
 
     // ─── Pause Event ───────────────────────────────────────────────
     socket.on('room:pause', ({ roomCode, currentTime }) => {
+      const room = activeRooms.get(roomCode);
+      if (room) {
+        room.isPlaying = false;
+        room.lastPosition = currentTime || 0;
+        room.lastPositionUpdate = Date.now();
+      }
       socket.to(roomCode).emit('room:pause', { currentTime, serverTs: Date.now() });
     });
 
     // ─── Seek Event ────────────────────────────────────────────────
     socket.on('room:seek', ({ roomCode, currentTime }) => {
+      const room = activeRooms.get(roomCode);
+      if (room) {
+        room.lastPosition = currentTime || 0;
+        room.lastPositionUpdate = Date.now();
+      }
       socket.to(roomCode).emit('room:seek', { currentTime, serverTs: Date.now() });
     });
 
     // ─── Video Change Event ────────────────────────────────────────
-    socket.on('room:video-change', ({ roomCode, videoId, title }) => {
-      socket.to(roomCode).emit('room:video-change', { videoId, title });
+    socket.on('room:video-change', ({ roomCode, videoId, title, channelName, thumbnail }) => {
+      const room = activeRooms.get(roomCode);
+      if (room) {
+        room.currentVideo = { videoId, title, channelName, thumbnail };
+        room.isPlaying = true; // Auto-play on video change
+        room.lastPosition = 0;
+        room.lastPositionUpdate = Date.now();
+      }
+      socket.to(roomCode).emit('room:video-change', { videoId, title, channelName, thumbnail });
     });
 
     // ─── Disconnect ────────────────────────────────────────────────

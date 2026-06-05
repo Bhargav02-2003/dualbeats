@@ -22,10 +22,11 @@ const Home = () => {
   const [joinInput, setJoinInput] = useState('');
   const [joinError, setJoinError] = useState('');
   const [createdCode, setCreatedCode] = useState('');
+  const [maxUsers, setMaxUsers] = useState(5);
   const [modalLoading, setModalLoading] = useState(false);
   const [notification, setNotification] = useState('');
   const [syncedAction, setSyncedAction] = useState(null);
-  const [syncedVideoId, setSyncedVideoId] = useState(null);
+  const [syncedVideo, setSyncedVideo] = useState(null);
   const socketRef = useRef(null);
 
   // ── Active video (lifted from PlayerPanel for suggestions) ────────────
@@ -165,8 +166,8 @@ const Home = () => {
       setSyncedAction({ type: 'pause', currentTime, serverTs: serverTs || Date.now(), ts: Date.now() }));
     s.on('room:seek', ({ currentTime, serverTs }) =>
       setSyncedAction({ type: 'seek', currentTime, serverTs: serverTs || Date.now(), ts: Date.now() }));
-    s.on('room:video-change', ({ videoId, title }) => {
-      setSyncedVideoId(videoId);
+    s.on('room:video-change', ({ videoId, title, channelName, thumbnail }) => {
+      setSyncedVideo({ videoId, title, channelName, thumbnail });
       if (title) showNotification(`Now syncing: ${title}`);
     });
 
@@ -184,8 +185,21 @@ const Home = () => {
         socket.emit('room:join', { roomCode: storedCode, userName: user?.name }, (res) => {
           if (res.success) {
             setRoomCode(storedCode);
-            setRoomInfo({ code: storedCode, userCount: res.userCount });
+            setRoomInfo({ code: storedCode, userCount: res.userCount, maxUsers: res.maxUsers });
             showNotification(`Rejoined room ${storedCode}!`);
+
+            // Sync initial state
+            if (res.currentVideo) {
+              setSyncedVideo(res.currentVideo);
+              if (res.currentTime !== undefined) {
+                setSyncedAction({
+                  type: res.isPlaying ? 'play' : 'pause',
+                  currentTime: res.currentTime,
+                  serverTs: Date.now(),
+                  ts: Date.now()
+                });
+              }
+            }
           } else {
             localStorage.removeItem('activeRoomCode');
             setRoomCode(''); setRoomInfo(null);
@@ -203,11 +217,11 @@ const Home = () => {
   const confirmCreateRoom = () => {
     if (!socketRef.current) return;
     setModalLoading(true);
-    socketRef.current.emit('room:create', { userName: user?.name }, (res) => {
+    socketRef.current.emit('room:create', { userName: user?.name, maxUsers }, (res) => {
       setModalLoading(false);
       if (res.success) {
         setCreatedCode(res.roomCode); setRoomCode(res.roomCode);
-        setRoomInfo({ code: res.roomCode, userCount: 1 }); setModal(MODAL.CREATED);
+        setRoomInfo({ code: res.roomCode, userCount: 1, maxUsers }); setModal(MODAL.CREATED);
         localStorage.setItem('activeRoomCode', res.roomCode);
       } else { setModal(MODAL.NONE); showNotification('Failed to create room.'); }
     });
@@ -221,9 +235,22 @@ const Home = () => {
     socketRef.current.emit('room:join', { roomCode: code, userName: user?.name }, (res) => {
       setModalLoading(false);
       if (res.success) {
-        setRoomCode(code); setRoomInfo({ code, userCount: res.userCount });
+        setRoomCode(code); setRoomInfo({ code, userCount: res.userCount, maxUsers: res.maxUsers });
         setModal(MODAL.NONE); showNotification(`Joined room ${code}!`);
         localStorage.setItem('activeRoomCode', code);
+
+        // Sync initial state
+        if (res.currentVideo) {
+          setSyncedVideo(res.currentVideo);
+          if (res.currentTime !== undefined) {
+            setSyncedAction({
+              type: res.isPlaying ? 'play' : 'pause',
+              currentTime: res.currentTime,
+              serverTs: Date.now(),
+              ts: Date.now()
+            });
+          }
+        }
       } else { setJoinError(res.message || 'Failed to join.'); }
     });
   };
@@ -266,7 +293,7 @@ const Home = () => {
           <PlayerPanel
             socket={socket}
             roomCode={roomCode}
-            syncedVideoId={syncedVideoId}
+            syncedVideo={syncedVideo}
             syncedAction={syncedAction}
             externalVideo={externalVideo}
             savedVideoIds={savedVideoIds}
@@ -357,7 +384,7 @@ const Home = () => {
       {modal === MODAL.CREATE && (
         <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 p-4" onClick={closeModal}>
           <div className="auth-card max-w-sm w-full animate-slide-up" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center gap-3 mb-4">
+            <div className="flex items-center gap-3 mb-5">
               <div className="w-10 h-10 rounded-full bg-accentMuted flex items-center justify-center">
                 <svg className="w-5 h-5 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
@@ -368,7 +395,35 @@ const Home = () => {
                 <p className="text-text-secondary text-xs">Listen together in real-time</p>
               </div>
             </div>
-            <p className="text-text-secondary text-sm mb-6">Share a 6-character code with a friend to sync playback.</p>
+
+            {/* Max Participants */}
+            <div className="mb-6">
+              <p className="text-text-secondary text-xs font-semibold uppercase tracking-wider mb-3">
+                Max Participants
+              </p>
+              <div className="grid grid-cols-4 gap-2">
+                {[1, 3, 5, 10].map((n) => (
+                  <button
+                    key={n}
+                    onClick={() => setMaxUsers(n)}
+                    className={`py-3 rounded-xl border-2 text-sm font-bold transition-all duration-150 ${
+                      maxUsers === n
+                        ? 'bg-accent border-accent text-white scale-105 shadow-lg'
+                        : 'bg-bg border-border text-text-secondary hover:border-accent hover:text-accent'
+                    }`}
+                  >
+                    {n === 1 ? 'Solo' : `${n}`}
+                    {n !== 1 && <span className="block text-xs font-normal opacity-70">people</span>}
+                  </button>
+                ))}
+              </div>
+              <p className="text-text-muted text-xs mt-2 text-center">
+                {maxUsers === 1
+                  ? 'Private room — only you'
+                  : `Up to ${maxUsers} people can join`}
+              </p>
+            </div>
+
             <div className="flex gap-3">
               <button onClick={closeModal} className="btn-secondary flex-1">Cancel</button>
               <button onClick={confirmCreateRoom} className="btn-primary flex-1" disabled={modalLoading}>
@@ -390,6 +445,9 @@ const Home = () => {
               </div>
               <h3 className="text-lg font-bold text-text-primary mb-1">Room Created!</h3>
               <p className="text-text-secondary text-sm">Share this code with your friend</p>
+              <p className="text-text-muted text-xs mt-1">
+                {maxUsers === 1 ? 'Private — solo only' : `Up to ${maxUsers} people can join`}
+              </p>
             </div>
             <div
               className="bg-bg border-2 border-accent rounded-xl py-5 text-center cursor-pointer hover:bg-cardHover transition-colors mb-4"

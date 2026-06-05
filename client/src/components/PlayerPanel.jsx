@@ -19,7 +19,7 @@ const LOOP = { NONE: 'none', ONE: 'one', ALL: 'all' };
 /**
  * PlayerPanel — central music player
  * Props:
- *   socket, roomCode, syncedVideoId, syncedAction — room sync
+ *   socket, roomCode, syncedVideo, syncedAction — room sync
  *   externalVideo — video triggered from library/queue/trending
  *   savedVideoIds, onSaveToggle — library save state
  *   onAddToQueue — adds a song to the queue
@@ -33,7 +33,7 @@ const LOOP = { NONE: 'none', ONE: 'one', ALL: 'all' };
 const PlayerPanel = ({
   socket,
   roomCode,
-  syncedVideoId,
+  syncedVideo,
   syncedAction,
   externalVideo,
   savedVideoIds,
@@ -56,12 +56,11 @@ const PlayerPanel = ({
 
   const setActiveVideo = useCallback((v) => {
     if (onActiveVideoChange) {
-      const val = typeof v === 'function' ? v(activeVideo) : v;
-      onActiveVideoChange(val);
+      onActiveVideoChange(v);
     } else {
       setLocalActiveVideo(v);
     }
-  }, [onActiveVideoChange, activeVideo]);
+  }, [onActiveVideoChange]);
 
   const [playerInstance, setPlayerInstance] = useState(null);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -81,6 +80,8 @@ const PlayerPanel = ({
   const shuffleRef = useRef(false);
   const queueRef = useRef(queue);
   const currentQueueIdxRef = useRef(currentQueueIdx);
+  const isPlayingRef = useRef(isPlaying);
+  const silentAudioRef = useRef(null);
 
   useEffect(() => { volumeRef.current = volume; }, [volume]);
   useEffect(() => { isMutedRef.current = isMuted; }, [isMuted]);
@@ -88,6 +89,19 @@ const PlayerPanel = ({
   useEffect(() => { shuffleRef.current = shuffle; }, [shuffle]);
   useEffect(() => { queueRef.current = queue; }, [queue]);
   useEffect(() => { currentQueueIdxRef.current = currentQueueIdx; }, [currentQueueIdx]);
+  useEffect(() => { isPlayingRef.current = isPlaying; }, [isPlaying]);
+
+  const playSilentAudio = useCallback(() => {
+    if (silentAudioRef.current) {
+      silentAudioRef.current.play().catch(() => {});
+    }
+  }, []);
+
+  const pauseSilentAudio = useCallback(() => {
+    if (silentAudioRef.current) {
+      try { silentAudioRef.current.pause(); } catch {}
+    }
+  }, []);
 
   // ── MediaSession API — lock screen controls ─────────────────────────
   const updateMediaSession = useCallback((video, playing) => {
@@ -120,9 +134,11 @@ const PlayerPanel = ({
     if (!('mediaSession' in navigator)) return;
     try {
       navigator.mediaSession.setActionHandler('play', () => {
+        playSilentAudio();
         if (playerInstance) { try { playerInstance.playVideo(); } catch {} }
       });
       navigator.mediaSession.setActionHandler('pause', () => {
+        pauseSilentAudio();
         if (playerInstance) { try { playerInstance.pauseVideo(); } catch {} }
       });
       navigator.mediaSession.setActionHandler('nexttrack', () => {
@@ -160,6 +176,27 @@ const PlayerPanel = ({
   useEffect(() => {
     if (activeVideo) updateMediaSession(activeVideo, isPlaying);
   }, [activeVideo, isPlaying, updateMediaSession]);
+
+  // ── Visibility Change Auto-Resume ───────────────────────────────────
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        if (isPlayingRef.current && playerInstance) {
+          try {
+            const state = playerInstance.getPlayerState();
+            if (state !== YT_STATES.PLAYING) {
+              playSilentAudio();
+              playerInstance.playVideo();
+            }
+          } catch {}
+        }
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [playerInstance, playSilentAudio]);
 
   // ── Progress bar polling ────────────────────────────────────────────
   useEffect(() => {
@@ -199,12 +236,29 @@ const PlayerPanel = ({
 
   // ── Handle room sync — video change ────────────────────────────────
   useEffect(() => {
-    if (!syncedVideoId || syncedVideoId === lastSyncedVideoRef.current) return;
-    lastSyncedVideoRef.current = syncedVideoId;
-    if (syncedVideoId !== activeVideo?.videoId) {
-      setActiveVideo((prev) => ({ ...prev, videoId: syncedVideoId }));
+    if (!syncedVideo || syncedVideo.videoId === lastSyncedVideoRef.current) return;
+    lastSyncedVideoRef.current = syncedVideo.videoId;
+    if (syncedVideo.videoId !== activeVideo?.videoId) {
+      setActiveVideo(syncedVideo);
     }
-  }, [syncedVideoId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [syncedVideo, activeVideo, setActiveVideo]);
+
+  // Emit video change to room when activeVideo changes locally
+  useEffect(() => {
+    if (!activeVideo || !activeVideo.videoId) return;
+    if (activeVideo.videoId !== lastSyncedVideoRef.current) {
+      lastSyncedVideoRef.current = activeVideo.videoId;
+      if (socket && roomCode) {
+        socket.emit('room:video-change', {
+          roomCode,
+          videoId: activeVideo.videoId,
+          title: activeVideo.title,
+          channelName: activeVideo.channelName,
+          thumbnail: activeVideo.thumbnail,
+        });
+      }
+    }
+  }, [activeVideo, socket, roomCode]);
 
   // ── Handle room sync — play/pause/seek ─────────────────────────────
   useEffect(() => {
@@ -215,16 +269,18 @@ const PlayerPanel = ({
         : 0;
       expectingSyncRef.current = { type: syncedAction.type, timestamp: Date.now() };
       if (syncedAction.type === 'play') {
+        playSilentAudio();
         playerInstance.seekTo((syncedAction.currentTime || 0) + delaySeconds, true);
         playerInstance.playVideo();
       } else if (syncedAction.type === 'pause') {
+        pauseSilentAudio();
         if (syncedAction.currentTime !== undefined) playerInstance.seekTo(syncedAction.currentTime, true);
         playerInstance.pauseVideo();
       } else if (syncedAction.type === 'seek') {
         playerInstance.seekTo((syncedAction.currentTime || 0) + delaySeconds, true);
       }
     } catch {}
-  }, [syncedAction]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [syncedAction, playerInstance, playSilentAudio, pauseSilentAudio]);
 
   const handlePlayerReady = useCallback((player) => {
     setPlayerInstance(player);
@@ -272,38 +328,47 @@ const PlayerPanel = ({
     const sync = expectingSyncRef.current;
     if (sync && Date.now() - sync.timestamp < 2000) {
       if (state === YT_STATES.PLAYING && (sync.type === 'play' || sync.type === 'seek')) {
-        setIsPlaying(true); return;
+        setIsPlaying(true);
+        playSilentAudio();
+        return;
       }
       if (state === YT_STATES.PAUSED && (sync.type === 'pause' || sync.type === 'seek')) {
-        setIsPlaying(false); return;
+        setIsPlaying(false);
+        if (document.visibilityState === 'visible') {
+          pauseSilentAudio();
+        }
+        return;
       }
     }
 
     if (state === YT_STATES.PLAYING) {
       setIsPlaying(true);
+      playSilentAudio();
       if (socket && roomCode) {
         socket.emit('room:play', { roomCode, videoId: activeVideo?.videoId, currentTime: ct });
       }
     } else if (state === YT_STATES.PAUSED) {
-      setIsPlaying(false);
-      if (socket && roomCode) {
-        socket.emit('room:pause', { roomCode, currentTime: ct });
+      // Only pause fully and emit pause if tab is visible
+      if (document.visibilityState === 'visible') {
+        setIsPlaying(false);
+        pauseSilentAudio();
+        if (socket && roomCode) {
+          socket.emit('room:pause', { roomCode, currentTime: ct });
+        }
       }
     } else if (state === YT_STATES.ENDED) {
       setIsPlaying(false);
+      pauseSilentAudio();
       handleNext();
     }
-  }, [socket, roomCode, activeVideo, handleNext]);
+  }, [socket, roomCode, activeVideo, handleNext, playSilentAudio, pauseSilentAudio]);
 
   const handleSelectVideo = useCallback((video) => {
     setActiveVideo(video);
     setSearchResults([]);
     setCurrentTime(0);
     setDuration(0);
-    if (socket && roomCode) {
-      socket.emit('room:video-change', { roomCode, videoId: video.videoId, title: video.title });
-    }
-  }, [socket, roomCode]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handlePlayPause = () => {
     if (!playerInstance) return;
@@ -554,6 +619,14 @@ const PlayerPanel = ({
           </div>
         </div>
       )}
+      {/* Hidden audio element playing silent WAV to keep background audio context active */}
+      <audio
+        ref={silentAudioRef}
+        src="data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA"
+        loop
+        preload="auto"
+        style={{ display: 'none' }}
+      />
     </div>
   );
 };
