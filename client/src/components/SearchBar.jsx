@@ -12,11 +12,9 @@ const SearchBar = ({ onResults, onLoading, playerId }) => {
       onResults([]);
       return;
     }
-
     setLoading(true);
     onLoading(true);
     setError('');
-
     try {
       const { data } = await api.get(`/api/youtube/search?q=${encodeURIComponent(q.trim())}`);
       onResults(data.results || []);
@@ -34,12 +32,8 @@ const SearchBar = ({ onResults, onLoading, playerId }) => {
     const value = e.target.value;
     setQuery(value);
     setError('');
-
-    // Debounce: wait 600ms after typing stops
     clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => {
-      search(value);
-    }, 600);
+    debounceRef.current = setTimeout(() => search(value), 600);
   };
 
   const handleSubmit = (e) => {
@@ -56,12 +50,12 @@ const SearchBar = ({ onResults, onLoading, playerId }) => {
   };
 
   return (
-    <div className="p-4">
+    <div className="p-3">
       <form onSubmit={handleSubmit} className="relative">
-        {/* Search icon */}
+        {/* Search icon / spinner */}
         <div className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted pointer-events-none">
           {loading ? (
-            <span className="spinner w-4 h-4"></span>
+            <span className="spinner-sm" />
           ) : (
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
@@ -74,11 +68,12 @@ const SearchBar = ({ onResults, onLoading, playerId }) => {
           type="text"
           value={query}
           onChange={handleChange}
-          placeholder="Search for music..."
-          className="form-input pl-10 pr-10"
+          placeholder="Search songs, artists, albums..."
+          className="form-input pl-10 pr-10 rounded-full text-sm"
+          autoComplete="off"
         />
 
-        {/* Clear button */}
+        {/* Clear */}
         {query && (
           <button
             type="button"
@@ -94,8 +89,8 @@ const SearchBar = ({ onResults, onLoading, playerId }) => {
       </form>
 
       {error && (
-        <p className="text-error text-xs mt-2 flex items-center gap-1">
-          <span>⚠️</span> {error}
+        <p className="text-error text-xs mt-2 flex items-center gap-1 px-1">
+          <span>⚠</span> {error}
         </p>
       )}
     </div>

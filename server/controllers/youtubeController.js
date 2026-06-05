@@ -81,4 +81,94 @@ const searchYouTube = async (req, res) => {
   }
 };
 
-module.exports = { searchYouTube };
+/**
+ * GET /api/youtube/trending
+ * Returns trending/popular music — fetched live from YouTube
+ */
+const TRENDING_QUERIES = [
+  'trending music 2025',
+  'top hits 2025',
+  'popular songs 2025',
+];
+
+const getTrending = async (req, res) => {
+  try {
+    const query = TRENDING_QUERIES[Math.floor(Math.random() * TRENDING_QUERIES.length)];
+    const result = await yts(query);
+
+    const seen = new Set();
+    const videos = result.videos
+      .filter((v) => {
+        if (seen.has(v.videoId)) return false;
+        seen.add(v.videoId);
+        return true;
+      })
+      .slice(0, 16)
+      .map((video) => ({
+        videoId: video.videoId,
+        title: video.title,
+        channelName: video.author?.name || 'Unknown Artist',
+        thumbnail:
+          video.thumbnail ||
+          `https://i.ytimg.com/vi/${video.videoId}/mqdefault.jpg`,
+        duration: video.timestamp,
+        views: video.views,
+        isMusicChannel: (video.author?.name || '').toLowerCase().includes('topic'),
+      }));
+
+    res.status(200).json({ videos });
+  } catch (error) {
+    console.error('Trending fetch error:', error.message);
+    res.status(500).json({ message: 'Failed to fetch trending.', videos: [] });
+  }
+};
+
+/**
+ * GET /api/youtube/suggestions?videoId=ID
+ * Returns song suggestions based on the currently playing song
+ */
+const getSuggestions = async (req, res) => {
+  try {
+    const { videoId, title } = req.query;
+
+    if (!videoId && !title) {
+      return res.status(400).json({ message: 'videoId or title required.', videos: [] });
+    }
+
+    // Use the song title to find related music
+    const searchQuery = title
+      ? `${title} similar songs audio`
+      : `music like ${videoId}`;
+
+    const result = await yts(searchQuery);
+
+    const seen = new Set();
+    if (videoId) seen.add(videoId); // Don't include the current song
+
+    const videos = result.videos
+      .filter((v) => {
+        if (seen.has(v.videoId)) return false;
+        seen.add(v.videoId);
+        return true;
+      })
+      .slice(0, 12)
+      .map((video) => ({
+        videoId: video.videoId,
+        title: video.title,
+        channelName: video.author?.name || 'Unknown Artist',
+        thumbnail:
+          video.thumbnail ||
+          `https://i.ytimg.com/vi/${video.videoId}/mqdefault.jpg`,
+        duration: video.timestamp,
+        views: video.views,
+        isMusicChannel: (video.author?.name || '').toLowerCase().includes('topic'),
+      }));
+
+    res.status(200).json({ videos });
+  } catch (error) {
+    console.error('Suggestions fetch error:', error.message);
+    res.status(500).json({ message: 'Failed to fetch suggestions.', videos: [] });
+  }
+};
+
+module.exports = { searchYouTube, getTrending, getSuggestions };
