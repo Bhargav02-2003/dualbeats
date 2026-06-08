@@ -1,10 +1,10 @@
 const jwt = require('jsonwebtoken');
 
 /**
- * Generate JWT access token (15 minutes)
+ * Generate JWT access token (24 hours)
  */
 const generateAccessToken = (userId) => {
-  return jwt.sign({ userId }, process.env.JWT_SECRET, { expiresIn: '15m' });
+  return jwt.sign({ userId }, process.env.JWT_SECRET, { expiresIn: '24h' });
 };
 
 /**
@@ -27,7 +27,7 @@ const setTokenCookies = (res, accessToken, refreshToken) => {
     httpOnly: true,
     secure: false, // Must be false for HTTP (no HTTPS on EC2 plain IP)
     sameSite,
-    maxAge: 15 * 60 * 1000, // 15 minutes
+    maxAge: 24 * 60 * 60 * 1000, // 24 hours
   });
 
   res.cookie('refreshToken', refreshToken, {

@@ -172,3 +172,4 @@ const getSuggestions = async (req, res) => {
 };
 
 module.exports = { searchYouTube, getTrending, getSuggestions };
+module.exports = { searchYouTube, getTrending, getSuggestions };

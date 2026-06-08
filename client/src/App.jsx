@@ -4,6 +4,8 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import Login from './pages/Login';
 import Register from './pages/Register';
 import VerifyOTP from './pages/VerifyOTP';
+import ForgotPassword from './pages/ForgotPassword';
+import ResetPassword from './pages/ResetPassword';
 import Home from './pages/Home';
 
 // Loading screen while checking auth state
@@ -61,6 +63,22 @@ const AppRoutes = () => (
       element={
         <PublicRoute>
           <VerifyOTP />
+        </PublicRoute>
+      }
+    />
+    <Route
+      path="/forgot-password"
+      element={
+        <PublicRoute>
+          <ForgotPassword />
+        </PublicRoute>
+      }
+    />
+    <Route
+      path="/reset-password"
+      element={
+        <PublicRoute>
+          <ResetPassword />
         </PublicRoute>
       }
     />

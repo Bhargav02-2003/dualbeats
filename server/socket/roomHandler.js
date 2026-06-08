@@ -1,5 +1,6 @@
 // Active rooms stored in memory: Map<roomCode, { users: Set<socketId>, hostId, maxUsers, isPlaying, lastPosition, lastPositionUpdate, currentVideo }>
 const activeRooms = new Map();
+const Message = require('../models/Message');
 
 /**
  * Generate a random 6-character alphanumeric room code
@@ -21,8 +22,8 @@ const setupRoomHandlers = (io) => {
   io.on('connection', (socket) => {
     console.log(`🔌 Socket connected: ${socket.id}`);
 
-    // ─── Create Room ───────────────────────────────────────────────
-    socket.on('room:create', ({ userName, maxUsers }, callback) => {
+    // ─── Create Room ────────────────────────────────────────────────
+    socket.on('room:create', ({ userName, maxUsers, userId }, callback) => {
       let roomCode;
       // Ensure unique code
       do {
@@ -46,14 +47,15 @@ const setupRoomHandlers = (io) => {
       socket.join(roomCode);
       socket.data.roomCode = roomCode;
       socket.data.userName = userName;
+      socket.data.userId = userId;
 
       console.log(`🏠 Room created: ${roomCode} by ${socket.id} (max: ${limit})`);
 
       if (callback) callback({ success: true, roomCode, maxUsers: limit });
     });
 
-    // ─── Join Room ─────────────────────────────────────────────────
-    socket.on('room:join', ({ roomCode, userName }, callback) => {
+    // ─── Join Room ──────────────────────────────────────────────
+    socket.on('room:join', ({ roomCode, userName, userId }, callback) => {
       const room = activeRooms.get(roomCode);
 
       if (!room) {
@@ -88,6 +90,7 @@ const setupRoomHandlers = (io) => {
       socket.join(roomCode);
       socket.data.roomCode = roomCode;
       socket.data.userName = userName;
+      socket.data.userId = userId;
 
       // Notify others in the room
       socket.to(roomCode).emit('room:user-joined', {
@@ -173,11 +176,102 @@ const setupRoomHandlers = (io) => {
       socket.to(roomCode).emit('room:video-change', { videoId, title, channelName, thumbnail });
     });
 
+    // ─── Chat: Send Message ────────────────────────────────────────
+    socket.on('chat:send', async ({ roomCode, text, emoji, messageType }) => {
+      const room = activeRooms.get(roomCode);
+      if (!room || !room.users.has(socket.id)) return;
+      if (!socket.data.userId) return;
+
+      try {
+        const msg = new Message({
+          roomCode,
+          senderId: socket.data.userId,
+          senderName: socket.data.userName || 'Guest',
+          text: text || '',
+          emoji: emoji || '',
+          messageType: messageType || 'text',
+        });
+        await msg.save();
+        io.to(roomCode).emit('chat:message', {
+          _id: msg._id,
+          senderId: msg.senderId,
+          senderName: msg.senderName,
+          text: msg.text,
+          emoji: msg.emoji,
+          messageType: msg.messageType,
+          reactions: msg.reactions,
+          seen: msg.seen,
+          createdAt: msg.createdAt,
+        });
+      } catch (err) {
+        console.error('chat:send error:', err);
+      }
+    });
+
+    // ─── Chat: Typing Indicator ────────────────────────────────────
+    socket.on('chat:typing', ({ roomCode, isTyping }) => {
+      socket.to(roomCode).emit('chat:typing', {
+        userId: socket.id,
+        userName: socket.data.userName || 'Guest',
+        isTyping,
+      });
+    });
+
+    // ─── Chat: Mark Seen ──────────────────────────────────────────
+    socket.on('chat:seen', async ({ roomCode, messageId }) => {
+      try {
+        await Message.findByIdAndUpdate(messageId, { seen: true });
+        socket.to(roomCode).emit('chat:seen', { messageId });
+      } catch (err) {
+        console.error('chat:seen error:', err);
+      }
+    });
+
+    // ─── Chat: React to Message ───────────────────────────────────
+    socket.on('chat:react', async ({ roomCode, messageId, emoji }) => {
+      try {
+        const msg = await Message.findById(messageId);
+        if (!msg) return;
+        const userId = socket.data.userId;
+        const existingIdx = msg.reactions.findIndex(
+          (r) => r.userId?.toString() === userId?.toString()
+        );
+        if (existingIdx !== -1) {
+          if (msg.reactions[existingIdx].emoji === emoji) {
+            // Same emoji → toggle off
+            msg.reactions.splice(existingIdx, 1);
+          } else {
+            // Different emoji → replace
+            msg.reactions[existingIdx].emoji = emoji;
+          }
+        } else {
+          msg.reactions.push({
+            emoji,
+            userId,
+            userName: socket.data.userName || 'Guest',
+          });
+        }
+        await msg.save();
+        io.to(roomCode).emit('chat:reaction', {
+          messageId,
+          reactions: msg.reactions,
+        });
+      } catch (err) {
+        console.error('chat:react error:', err);
+      }
+    });
+
     // ─── Disconnect ────────────────────────────────────────────────
     socket.on('disconnect', () => {
       console.log(`🔌 Socket disconnected: ${socket.id}`);
       const roomCode = socket.data.roomCode;
       if (roomCode) {
+        // Clean up typing indicator for others
+        socket.to(roomCode).emit('chat:typing', {
+          userId: socket.id,
+          userName: socket.data.userName || 'Guest',
+          isTyping: false,
+        });
         leaveRoom(io, socket, roomCode);
       }
     });

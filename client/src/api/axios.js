@@ -3,8 +3,8 @@ import axios from 'axios';
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000';
 
 // Public routes that should NEVER trigger token refresh or redirect
-const PUBLIC_URLS = ['/auth/me', '/auth/refresh', '/auth/login', '/auth/register', '/auth/verify-otp'];
-const PUBLIC_PATHS = ['/login', '/register', '/verify-otp'];
+const PUBLIC_URLS = ['/auth/me', '/auth/refresh', '/auth/login', '/auth/register', '/auth/verify-otp', '/auth/forgot-password', '/auth/reset-password'];
+const PUBLIC_PATHS = ['/login', '/register', '/verify-otp', '/forgot-password', '/reset-password'];
 
 const api = axios.create({
   baseURL: BASE_URL,

@@ -121,5 +121,73 @@ const sendOTPEmail = async (toEmail, otp, name) => {
   }
 };
 
-module.exports = { sendOTPEmail };
+/**
+ * Send password reset email
+ * @param {string} toEmail - Recipient email address
+ * @param {string} otp - 6-digit verification code
+ * @param {string} name - Recipient name
+ */
+const sendResetPasswordEmail = async (toEmail, otp, name) => {
+  const transporter = await createTransporter();
+
+  const mailOptions = {
+    from: `"DualBeats 🎵" <${process.env.EMAIL_USER || 'dualbeats@test.com'}>`,
+    to: toEmail,
+    subject: 'Reset your DualBeats password',
+    html: `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <meta charset="utf-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <title>Reset Password</title>
+        </head>
+        <body style="margin: 0; padding: 0; background-color: #0f0f0f; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;">
+          <div style="max-width: 600px; margin: 40px auto; background: linear-gradient(135deg, #1a1a1a, #212121); border-radius: 16px; overflow: hidden; border: 1px solid #2a2a2a;">
+            <div style="background: linear-gradient(135deg, #f53b57, #ff793f); padding: 40px 30px; text-align: center;">
+              <h1 style="margin: 0; color: #ffffff; font-size: 28px; font-weight: 800; letter-spacing: -0.5px;">🎵 DualBeats</h1>
+              <p style="margin: 8px 0 0; color: rgba(255,255,255,0.85); font-size: 14px;">Reset Your Password</p>
+            </div>
+            <div style="padding: 40px 30px;">
+              <p style="color: #e0e0e0; font-size: 16px; margin: 0 0 16px;">Hi <strong style="color: #ff793f;">${name}</strong>,</p>
+              <p style="color: #aaa; font-size: 15px; line-height: 1.6; margin: 0 0 30px;">
+                You requested a password reset. Use the reset code below to choose a new password. This code expires in <strong style="color: #e0e0e0;">10 minutes</strong>.
+              </p>
+              <div style="background: #0f0f0f; border: 2px solid #f53b57; border-radius: 12px; padding: 24px; text-align: center; margin: 0 0 30px;">
+                <p style="margin: 0 0 8px; color: #888; font-size: 13px; text-transform: uppercase; letter-spacing: 2px;">Reset Code</p>
+                <div style="font-size: 42px; font-weight: 900; color: #f53b57; letter-spacing: 12px; margin: 8px 0;">${otp}</div>
+              </div>
+              <p style="color: #666; font-size: 13px; margin: 0;">
+                If you didn't request a password reset, you can safely ignore this email.
+              </p>
+            </div>
+            <div style="padding: 20px 30px; border-top: 1px solid #2a2a2a; text-align: center;">
+              <p style="color: #555; font-size: 12px; margin: 0;">© 2024 DualBeats. All rights reserved.</p>
+            </div>
+          </div>
+        </body>
+      </html>
+    `,
+  };
+
+  const info = await transporter.sendMail(mailOptions);
+
+  if (isMaildevEnabled()) {
+    console.log('\n' + '='.repeat(50));
+    console.log(`📧 RESET PASSWORD EMAIL (MAILDEV MODE)`);
+    console.log(`   To     : ${toEmail}`);
+    console.log(`   OTP    : ${otp}  ← USE THIS CODE`);
+    console.log(`   Web UI : http://localhost:1080`);
+    console.log('='.repeat(50) + '\n');
+  } else if (!isGmailConfigured()) {
+    console.log('\n' + '='.repeat(50));
+    console.log(`📧 RESET PASSWORD EMAIL (TEST MODE)`);
+    console.log(`   To   : ${toEmail}`);
+    console.log(`   OTP  : ${otp}  ← USE THIS CODE`);
+    console.log(`   Preview: ${nodemailer.getTestMessageUrl(info)}`);
+    console.log('='.repeat(50) + '\n');
+  }
+};
+
+module.exports = { sendOTPEmail, sendResetPasswordEmail };
 

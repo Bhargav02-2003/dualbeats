@@ -11,6 +11,7 @@ dotenv.config();
 const authRoutes = require('./routes/auth');
 const youtubeRoutes = require('./routes/youtube');
 const savedRoutes = require('./routes/saved');
+const chatRoutes = require('./routes/chat');
 const { setupRoomHandlers } = require('./socket/roomHandler');
 
 const app = express();
@@ -55,6 +56,7 @@ app.use(cookieParser());
 app.use('/api/auth', authRoutes);
 app.use('/api/youtube', youtubeRoutes);
 app.use('/api/saved', savedRoutes);
+app.use('/api/chat', chatRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {

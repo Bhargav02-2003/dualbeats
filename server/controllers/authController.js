@@ -3,7 +3,7 @@ const bcrypt = require('bcryptjs');
 const User = require('../models/User');
 const OTP = require('../models/OTP');
 const { generateOTP } = require('../utils/generateOTP');
-const { sendOTPEmail } = require('../utils/sendEmail');
+const { sendOTPEmail, sendResetPasswordEmail } = require('../utils/sendEmail');
 const {
   generateAccessToken,
   generateRefreshToken,
@@ -309,4 +309,123 @@ const resendOTP = async (req, res) => {
   }
 };
 
-module.exports = { register, verifyOTP, login, refresh, logout, getMe, resendOTP };
+/**
+ * POST /api/auth/forgot-password
+ * Step 1: Send password reset OTP
+ */
+const forgotPassword = async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    if (!email) {
+      return res.status(400).json({ message: 'Email is required.' });
+    }
+
+    const user = await User.findOne({ email: email.toLowerCase() });
+    if (!user) {
+      return res.status(404).json({ message: 'No account found with this email address.' });
+    }
+
+    // Delete any existing OTP for this email
+    await OTP.deleteMany({ email: email.toLowerCase() });
+
+    // Generate OTP
+    const otp = generateOTP();
+
+    // Save OTP
+    const otpDoc = new OTP({
+      email: email.toLowerCase(),
+      otp,
+      expiresAt: new Date(Date.now() + 10 * 60 * 1000), // 10 minutes
+    });
+    await otpDoc.save();
+
+    // Send reset password email
+    await sendResetPasswordEmail(email.toLowerCase(), otp, user.name);
+
+    const responsePayload = {
+      message: 'Password reset code sent to your email. Please check your inbox.',
+      email: email.toLowerCase(),
+    };
+
+    // In development mode, return OTP in response for testing convenience
+    if (process.env.USE_MAILDEV === 'true' || process.env.NODE_ENV === 'development' || !process.env.NODE_ENV) {
+      responsePayload.otp = otp;
+    }
+
+    res.status(200).json(responsePayload);
+  } catch (error) {
+    console.error('Forgot password error:', error);
+    res.status(500).json({ message: 'Failed to send password reset code. Please try again.' });
+  }
+};
+
+/**
+ * POST /api/auth/reset-password
+ * Step 2: Verify OTP and reset password
+ */
+const resetPassword = async (req, res) => {
+  try {
+    const { email, otp, newPassword } = req.body;
+
+    if (!email || !otp || !newPassword) {
+      return res.status(400).json({ message: 'All fields (email, otp, new password) are required.' });
+    }
+
+    if (newPassword.length < 6) {
+      return res.status(400).json({ message: 'Password must be at least 6 characters.' });
+    }
+
+    // Find user
+    const user = await User.findOne({ email: email.toLowerCase() });
+    if (!user) {
+      return res.status(404).json({ message: 'User not found.' });
+    }
+
+    // Find OTP document
+    const otpDoc = await OTP.findOne({ email: email.toLowerCase() });
+    if (!otpDoc) {
+      return res.status(400).json({ message: 'Reset code not found or expired. Please request a new one.' });
+    }
+
+    // Check expiry
+    if (otpDoc.isExpired()) {
+      await OTP.deleteOne({ _id: otpDoc._id });
+      return res.status(400).json({ message: 'Reset code has expired. Please request a new one.' });
+    }
+
+    // Verify OTP
+    const isValid = await otpDoc.verifyOtp(otp.toString().trim());
+    if (!isValid) {
+      return res.status(400).json({ message: 'Invalid reset code. Please check and try again.' });
+    }
+
+    // Hash the new password
+    const salt = await bcrypt.genSalt(12);
+    const hashedPassword = await bcrypt.hash(newPassword, salt);
+
+    // Update user password
+    user.password = hashedPassword;
+    await user.save();
+
+    // Delete the OTP document
+    await OTP.deleteOne({ _id: otpDoc._id });
+
+    res.status(200).json({ message: 'Password reset successful! You can now log in with your new password.' });
+  } catch (error) {
+    console.error('Reset password error:', error);
+    res.status(500).json({ message: 'Failed to reset password. Please try again.' });
+  }
+};
+
+module.exports = {
+  register,
+  verifyOTP,
+  login,
+  refresh,
+  logout,
+  getMe,
+  resendOTP,
+  forgotPassword,
+  resetPassword,
+};

@@ -7,6 +7,7 @@ import PlayerPanel from '../components/PlayerPanel';
 import QueueList from '../components/QueueList';
 import SavedSongs from '../components/SavedSongs';
 import TrendingSection from '../components/TrendingSection';
+import ChatPanel from '../components/chat/ChatPanel';
 
 const SOCKET_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000';
 const MODAL = { NONE: 'none', CREATE: 'create', JOIN: 'join', CREATED: 'created' };
@@ -28,6 +29,10 @@ const Home = () => {
   const [syncedAction, setSyncedAction] = useState(null);
   const [syncedVideo, setSyncedVideo] = useState(null);
   const socketRef = useRef(null);
+
+  // ── Mobile tab state for Player / Chat ──────────────────────────────────────
+  const [mobileTab, setMobileTab] = useState('player'); // 'player' | 'chat'
+  const [chatUnread, setChatUnread] = useState(0);
 
   // ── Active video (lifted from PlayerPanel for suggestions) ────────────
   const [activeVideo, setActiveVideo] = useState(null);
@@ -182,7 +187,7 @@ const Home = () => {
     const handleConnect = () => {
       const storedCode = localStorage.getItem('activeRoomCode');
       if (storedCode) {
-        socket.emit('room:join', { roomCode: storedCode, userName: user?.name }, (res) => {
+        socket.emit('room:join', { roomCode: storedCode, userName: user?.name, userId: user?._id }, (res) => {
           if (res.success) {
             setRoomCode(storedCode);
             setRoomInfo({ code: storedCode, userCount: res.userCount, maxUsers: res.maxUsers });
@@ -217,7 +222,7 @@ const Home = () => {
   const confirmCreateRoom = () => {
     if (!socketRef.current) return;
     setModalLoading(true);
-    socketRef.current.emit('room:create', { userName: user?.name, maxUsers }, (res) => {
+    socketRef.current.emit('room:create', { userName: user?.name, maxUsers, userId: user?._id }, (res) => {
       setModalLoading(false);
       if (res.success) {
         setCreatedCode(res.roomCode); setRoomCode(res.roomCode);
@@ -232,7 +237,7 @@ const Home = () => {
     if (!code || code.length !== 6) { setJoinError('Enter a valid 6-character code.'); return; }
     if (!socketRef.current) return;
     setModalLoading(true);
-    socketRef.current.emit('room:join', { roomCode: code, userName: user?.name }, (res) => {
+    socketRef.current.emit('room:join', { roomCode: code, userName: user?.name, userId: user?._id }, (res) => {
       setModalLoading(false);
       if (res.success) {
         setRoomCode(code); setRoomInfo({ code, userCount: res.userCount, maxUsers: res.maxUsers });
@@ -257,9 +262,11 @@ const Home = () => {
 
   const handleLeaveRoom = () => {
     if (socketRef.current && roomCode) socketRef.current.emit('room:leave');
-    setRoomCode(''); setRoomInfo(null); setSyncedAction(null); setSyncedVideoId(null);
+    setRoomCode(''); setRoomInfo(null); setSyncedAction(null); setSyncedVideo(null);
     localStorage.removeItem('activeRoomCode');
     showNotification('Left the room.');
+    setMobileTab('player');
+    setChatUnread(0);
   };
 
   const closeModal = () => { setModal(MODAL.NONE); setJoinError(''); setJoinInput(''); };
@@ -320,7 +327,7 @@ const Home = () => {
           </div>
         </aside>
 
-        {/* ── Right — main content ── */}
+        {/* ── Center — main content ── */}
         <section className="flex-1 overflow-y-auto p-4 lg:pl-2 lg:pr-6 lg:pt-5">
 
           {/* Room sync info strip */}
@@ -354,17 +361,74 @@ const Home = () => {
           </div>
         </section>
 
-        {/* ── Mobile bottom queue toggle ── */}
+        {/* ── Desktop Chat Panel — only visible when in a room ── */}
+        {roomCode && (
+          <aside className="hidden lg:flex flex-col w-[340px] xl:w-[380px] flex-shrink-0 h-[calc(100vh-56px)] sticky top-14 border-l border-[#2a2a2a]">
+            <ChatPanel
+              socket={socket}
+              roomCode={roomCode}
+              currentUser={user}
+              roomInfo={roomInfo}
+            />
+          </aside>
+        )}
+
+        {/* ── Mobile bottom tabs (Player / Chat / Queue) ── */}
         <div className="lg:hidden fixed bottom-0 left-0 right-0 z-40">
-          <button
-            onClick={() => setShowQueue((v) => !v)}
-            className="w-full bg-card border-t border-border py-3 flex items-center justify-center gap-2 text-sm text-text-secondary"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h10" />
-            </svg>
-            Queue ({queue.length})
-          </button>
+          {roomCode ? (
+            <div className="bg-card border-t border-border flex">
+              <button
+                onClick={() => setMobileTab('player')}
+                className={`flex-1 py-3 flex items-center justify-center gap-1.5 text-sm font-medium transition-colors ${mobileTab === 'player' ? 'text-accent' : 'text-text-secondary'}`}
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                Player
+              </button>
+              <button
+                onClick={() => { setMobileTab('chat'); setChatUnread(0); }}
+                className={`flex-1 py-3 flex items-center justify-center gap-1.5 text-sm font-medium transition-colors relative ${mobileTab === 'chat' ? 'text-accent' : 'text-text-secondary'}`}
+              >
+                💬 Chat
+                {chatUnread > 0 && (
+                  <span className="absolute top-1.5 right-6 bg-red-500 text-white text-[10px] font-bold rounded-full min-w-[16px] h-4 flex items-center justify-center px-1">
+                    {chatUnread}
+                  </span>
+                )}
+              </button>
+              <button
+                onClick={() => setShowQueue((v) => !v)}
+                className="flex-1 py-3 flex items-center justify-center gap-1.5 text-sm text-text-secondary"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h10" />
+                </svg>
+                Queue
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => setShowQueue((v) => !v)}
+              className="w-full bg-card border-t border-border py-3 flex items-center justify-center gap-2 text-sm text-text-secondary"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h10" />
+              </svg>
+              Queue ({queue.length})
+            </button>
+          )}
+          {roomCode && mobileTab === 'chat' && (
+            <div className="fixed inset-0 bottom-12 bg-[#0f0f0f] z-50 flex flex-col">
+              <ChatPanel
+                socket={socket}
+                roomCode={roomCode}
+                currentUser={user}
+                roomInfo={roomInfo}
+              />
+            </div>
+          )}
           {showQueue && (
             <div className="bg-bg border-t border-border max-h-64 overflow-y-auto animate-slide-up">
               <QueueList
