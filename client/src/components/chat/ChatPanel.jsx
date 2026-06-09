@@ -80,7 +80,7 @@ const MessageBubble = ({ msg, isMine, onReact, onReactOpen, currentUserId }) => 
 };
 
 // ── ChatPanel ───────────────────────────────────────────────────────────────
-const ChatPanel = ({ socket, roomCode, currentUser, roomInfo }) => {
+const ChatPanel = ({ socket, roomCode, currentUser, roomInfo, onMessageReceived }) => {
   const [messages, setMessages] = useState([]);
   const [inputText, setInputText] = useState('');
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
@@ -120,6 +120,9 @@ const ChatPanel = ({ socket, roomCode, currentUser, roomInfo }) => {
         socket.emit('chat:seen', { roomCode, messageId: msg._id });
         if (!isAtBottom) {
           setUnreadCount((n) => n + 1);
+        }
+        if (onMessageReceived) {
+          onMessageReceived(msg);
         }
       }
     };

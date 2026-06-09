@@ -188,7 +188,8 @@ const SongCard = ({ video, isSaved, onPlay, onAddToQueue, onSaveToggle, compact 
 
   return (
     <div
-      className="song-card"
+      className="song-card cursor-pointer group"
+      onClick={() => onPlay && onPlay(video)}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
@@ -201,10 +202,10 @@ const SongCard = ({ video, isSaved, onPlay, onAddToQueue, onSaveToggle, compact 
           loading="lazy"
           onError={(e) => { e.target.src = `https://i.ytimg.com/vi/${video.videoId}/mqdefault.jpg`; }}
         />
-        {/* Play overlay */}
-        <div className={`play-overlay ${hovered ? 'opacity-100' : 'opacity-0'}`}>
+        {/* Play overlay (desktop only) */}
+        <div className={`play-overlay hidden md:flex ${hovered ? 'opacity-100' : 'opacity-0'}`}>
           <button
-            onClick={() => onPlay && onPlay(video)}
+            onClick={(e) => { e.stopPropagation(); onPlay && onPlay(video); }}
             className="w-10 h-10 bg-accent rounded-full flex items-center justify-center hover:bg-accentDark transition-colors shadow-xl"
           >
             <svg className="w-5 h-5 text-white ml-0.5" fill="currentColor" viewBox="0 0 24 24">
@@ -226,28 +227,30 @@ const SongCard = ({ video, isSaved, onPlay, onAddToQueue, onSaveToggle, compact 
         <p className="text-text-muted text-xs truncate mt-0.5">{video.channelName}</p>
       </div>
 
-      {/* Action buttons */}
-      <div className={`flex items-center gap-1 mt-1.5 px-0.5 transition-opacity duration-200 ${hovered ? 'opacity-100' : 'opacity-0'}`}>
+      {/* Action buttons — always visible on mobile, hover on desktop */}
+      <div className={`flex items-center gap-2 mt-1.5 px-0.5 transition-opacity duration-200 opacity-100 md:opacity-0 md:group-hover:opacity-100`}>
         {onAddToQueue && (
           <button
             onClick={(e) => { e.stopPropagation(); onAddToQueue(video); }}
-            className="p-1 rounded-lg text-text-muted hover:text-accent hover:bg-accentMuted transition-all text-xs flex items-center gap-0.5"
+            className="p-1.5 rounded-lg text-text-muted hover:text-accent hover:bg-accentMuted transition-all text-xs flex items-center gap-0.5 bg-card md:bg-transparent border border-border md:border-transparent"
             title="Add to queue"
           >
             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
             </svg>
+            <span className="md:hidden text-[10px] font-bold">Queue</span>
           </button>
         )}
         <button
           onClick={(e) => { e.stopPropagation(); onSaveToggle && onSaveToggle(video); }}
-          className={`p-1 rounded-lg transition-all ${isSaved ? 'text-accent' : 'text-text-muted hover:text-accent'}`}
+          className={`p-1.5 rounded-lg transition-all flex items-center gap-0.5 bg-card md:bg-transparent border border-border md:border-transparent ${isSaved ? 'text-accent border-accent border-opacity-30' : 'text-text-muted hover:text-accent'}`}
           title={isSaved ? 'Remove from library' : 'Save to library'}
         >
           <svg className="w-3.5 h-3.5" fill={isSaved ? 'currentColor' : 'none'} stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
               d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
           </svg>
+          <span className="md:hidden text-[10px] font-bold">{isSaved ? 'Saved' : 'Save'}</span>
         </button>
       </div>
     </div>

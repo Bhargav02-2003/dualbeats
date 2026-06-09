@@ -45,6 +45,7 @@ const PlayerPanel = ({
   onPlayFromQueue,
   activeVideo: activeVideoProp,
   onActiveVideoChange,
+  activeMobileTab,
 }) => {
   const playerId = 'player1';
   const [searchResults, setSearchResults] = useState([]);
@@ -70,6 +71,7 @@ const PlayerPanel = ({
   const [duration, setDuration] = useState(0);
   const [loopMode, setLoopMode] = useState(LOOP.NONE);
   const [shuffle, setShuffle] = useState(false);
+  const [isMobileExpanded, setIsMobileExpanded] = useState(false);
 
   const lastSyncedVideoRef = useRef(null);
   const volumeRef = useRef(70);
@@ -424,32 +426,46 @@ const PlayerPanel = ({
 
   const showSearch = searchResults.length > 0 || searchLoading;
   const isSaved = savedVideoIds?.has(activeVideo?.videoId);
+  const hideSearch = activeMobileTab && activeMobileTab !== 'home';
 
   return (
-    <div className="player-panel flex flex-col animate-fade-in">
-      {/* Search */}
-      <SearchBar
-        playerId={playerId}
-        onResults={setSearchResults}
-        onLoading={setSearchLoading}
-      />
-
-      {/* Search Results */}
-      {showSearch && (
-        <SearchResults
-          results={searchResults}
-          loading={searchLoading}
-          onSelect={handleSelectVideo}
-          activeVideoId={activeVideo?.videoId}
+    <div className="player-panel flex flex-col animate-fade-in lg:bg-card lg:border lg:border-border lg:rounded-2xl lg:min-h-[520px]">
+      {/* ── Search Bar ── */}
+      <div className={`lg:block ${hideSearch ? 'hidden' : 'fixed top-14 left-0 right-0 z-[45] bg-[#0f0f0f] border-b border-border px-2 py-1 lg:relative lg:top-0 lg:p-0 lg:bg-transparent lg:border-0'}`}>
+        <SearchBar
           playerId={playerId}
-          savedVideoIds={savedVideoIds}
-          onSaveToggle={onSaveToggle}
-          onAddToQueue={onAddToQueue}
+          onResults={setSearchResults}
+          onLoading={setSearchLoading}
         />
+      </div>
+
+      {/* ── Search Results ── */}
+      {showSearch && !hideSearch && (
+        <div className={`lg:block lg:relative lg:top-0 lg:bottom-auto lg:z-10 lg:bg-transparent lg:px-0 lg:max-h-80 mobile-search-results ${
+          activeVideo ? 'has-player' : ''
+        }`}>
+          <SearchResults
+            results={searchResults}
+            loading={searchLoading}
+            onSelect={handleSelectVideo}
+            activeVideoId={activeVideo?.videoId}
+            playerId={playerId}
+            savedVideoIds={savedVideoIds}
+            onSaveToggle={onSaveToggle}
+            onAddToQueue={onAddToQueue}
+          />
+        </div>
       )}
 
-      {/* YouTube Player — always mounted */}
-      <div className={`flex-1 px-3 pt-2 ${showSearch ? 'hidden' : ''}`}>
+      {/* ── YouTube Player (always mounted) ── */}
+      <div className={`
+        ${showSearch ? 'hidden' : 'block'}
+        lg:relative lg:top-0 lg:w-full lg:h-auto lg:aspect-video lg:opacity-100 lg:pointer-events-auto lg:px-3 lg:pt-2
+        ${!isMobileExpanded
+          ? 'fixed top-0 left-0 w-0 h-0 opacity-0 pointer-events-none'
+          : 'fixed top-[72px] left-4 right-4 aspect-video z-[55] bg-bg opacity-100 pointer-events-auto'
+        }
+      `}>
         <YouTubePlayer
           playerId={playerId}
           videoId={activeVideo?.videoId || null}
@@ -458,10 +474,9 @@ const PlayerPanel = ({
         />
       </div>
 
-      {/* Now Playing Info + Controls */}
+      {/* ── Desktop Player Controls ── */}
       {activeVideo && !showSearch && (
-        <div className="px-4 pb-4 pt-3 space-y-3 border-t border-border mt-2">
-
+        <div className="hidden lg:block px-4 pb-4 pt-3 space-y-3 border-t border-border mt-2">
           {/* Song meta + save */}
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0 flex-1">
@@ -619,6 +634,235 @@ const PlayerPanel = ({
           </div>
         </div>
       )}
+
+      {/* ── Mobile Mini Player ── */}
+      {activeVideo && !showSearch && !isMobileExpanded && (
+        <div
+          onClick={() => setIsMobileExpanded(true)}
+          className="lg:hidden fixed bottom-[52px] left-0 right-0 h-[64px] bg-[#161616] border-t border-border z-40 flex items-center justify-between px-3 cursor-pointer select-none"
+        >
+          {/* Mini progress line */}
+          <div className="absolute top-0 left-0 right-0 h-0.5 bg-border">
+            <div
+              className="h-full bg-accent"
+              style={{ width: `${duration ? (currentTime / duration) * 100 : 0}%` }}
+            />
+          </div>
+
+          <div className="flex items-center gap-2.5 min-w-0 flex-1 mr-3">
+            <img
+              src={activeVideo.thumbnail || `https://i.ytimg.com/vi/${activeVideo.videoId}/mqdefault.jpg`}
+              alt={activeVideo.title}
+              className="w-10 h-10 object-cover rounded-lg flex-shrink-0"
+              onError={(e) => { e.target.src = `https://i.ytimg.com/vi/${activeVideo.videoId}/mqdefault.jpg`; }}
+            />
+            <div className="min-w-0">
+              <p className="text-text-primary text-xs font-semibold truncate leading-normal">{activeVideo.title}</p>
+              <p className="text-text-muted text-[10px] truncate">{activeVideo.channelName}</p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-1 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+            {/* Save / Like */}
+            <button
+              onClick={() => onSaveToggle && onSaveToggle(activeVideo)}
+              className={`p-2 rounded-full transition-all ${isSaved ? 'text-accent' : 'text-text-muted hover:text-accent'}`}
+            >
+              <svg className="w-5 h-5" fill={isSaved ? 'currentColor' : 'none'} stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                  d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
+              </svg>
+            </button>
+            {/* Play/Pause */}
+            <button
+              onClick={handlePlayPause}
+              className="w-9 h-9 bg-accent rounded-full flex items-center justify-center text-white"
+            >
+              {isPlaying ? (
+                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>
+                </svg>
+              ) : (
+                <svg className="w-4 h-4 ml-0.5" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M8 5v14l11-7z"/>
+                </svg>
+              )}
+            </button>
+            {/* Next */}
+            <button
+              onClick={handleNext}
+              className="p-2 text-text-primary"
+            >
+              <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Mobile Full-Screen Player Modal ── */}
+      {activeVideo && !showSearch && isMobileExpanded && (
+        <div className="lg:hidden fixed inset-0 z-[50] bg-bg flex flex-col px-5 pb-6 pt-1">
+          {/* Header */}
+          <div className="flex items-center justify-between py-3 mb-2 border-b border-border border-opacity-10">
+            <button
+              onClick={() => setIsMobileExpanded(false)}
+              className="p-2 text-text-secondary hover:text-text-primary rounded-full hover:bg-cardHover"
+            >
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+            <div className="text-center">
+              <p className="text-[10px] text-text-muted font-bold tracking-widest uppercase">Now Playing</p>
+              {roomCode && (
+                <p className="text-xs text-accent font-semibold tracking-wider">Sync Room: {roomCode}</p>
+              )}
+            </div>
+            <div className="w-10 h-10" /> {/* Spacer for symmetry */}
+          </div>
+
+          {/* YouTube Video container spacer — the actual iframe is positioned absolutely on top of this area */}
+          <div className="w-full aspect-video rounded-xl bg-[#161616] flex items-center justify-center relative mb-6 overflow-hidden border border-border border-opacity-20">
+            {/* Spacer so that the absolute iframe has a visual backdrop and sits here */}
+            <p className="text-xs text-text-muted">Loading video player...</p>
+          </div>
+
+          {/* Song Meta Info */}
+          <div className="flex items-start justify-between gap-3 mb-6">
+            <div className="min-w-0 flex-1">
+              <h3 className="text-lg font-bold text-text-primary truncate leading-snug">{activeVideo.title}</h3>
+              <p className="text-text-muted text-sm truncate mt-1">{activeVideo.channelName}</p>
+            </div>
+            <button
+              onClick={() => onSaveToggle && onSaveToggle(activeVideo)}
+              className={`p-2.5 rounded-full transition-all bg-card border border-border ${isSaved ? 'text-accent border-accent border-opacity-30' : 'text-text-muted'}`}
+            >
+              <svg className="w-6 h-6" fill={isSaved ? 'currentColor' : 'none'} stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                  d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
+              </svg>
+            </button>
+          </div>
+
+          {/* Progress Slider */}
+          <div className="space-y-2 mb-6">
+            <input
+              type="range"
+              min={0}
+              max={duration || 1}
+              value={currentTime}
+              onChange={handleSeek}
+              className="w-full h-1.5"
+              style={{
+                background: `linear-gradient(to right, #ff0000 ${duration ? (currentTime / duration) * 100 : 0}%, #2a2a2a ${duration ? (currentTime / duration) * 100 : 0}%)`
+              }}
+            />
+            <div className="flex justify-between text-xs text-text-muted px-0.5">
+              <span>{formatTime(currentTime)}</span>
+              <span>{formatTime(duration)}</span>
+            </div>
+          </div>
+
+          {/* Playback Controls Row */}
+          <div className="flex items-center justify-between px-2 mb-8">
+            {/* Shuffle */}
+            <button
+              onClick={() => setShuffle((s) => !s)}
+              className={`w-10 h-10 flex items-center justify-center rounded-full text-text-muted transition-colors ${shuffle ? 'text-accent bg-accent bg-opacity-10' : ''}`}
+            >
+              <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M10.59 9.17L5.41 4 4 5.41l5.17 5.17 1.42-1.41zM14.5 4l2.04 2.04L4 18.59 5.41 20 17.96 7.46 20 9.5V4h-5.5zm.33 9.41l-1.41 1.41 3.13 3.13L14.5 20H20v-5.5l-2.04 2.04-3.13-3.13z"/>
+              </svg>
+            </button>
+
+            {/* Previous */}
+            <button
+              onClick={() => {
+                const prevIdx = currentQueueIdx - 1;
+                if (prevIdx >= 0 && onPlayFromQueue) onPlayFromQueue(prevIdx);
+                else if (playerInstance) { try { playerInstance.seekTo(0, true); } catch {} }
+              }}
+              className="w-12 h-12 flex items-center justify-center rounded-full text-text-primary hover:bg-cardHover"
+            >
+              <svg className="w-7 h-7" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/>
+              </svg>
+            </button>
+
+            {/* Play/Pause (Large Circular Button) */}
+            <button
+              onClick={handlePlayPause}
+              className="w-16 h-16 bg-accent rounded-full flex items-center justify-center text-white shadow-2xl hover:scale-105 transition-transform"
+            >
+              {isPlaying ? (
+                <svg className="w-8 h-8" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>
+                </svg>
+              ) : (
+                <svg className="w-8 h-8 ml-1" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M8 5v14l11-7z"/>
+                </svg>
+              )}
+            </button>
+
+            {/* Next */}
+            <button
+              onClick={handleNext}
+              className="w-12 h-12 flex items-center justify-center rounded-full text-text-primary hover:bg-cardHover"
+            >
+              <svg className="w-7 h-7" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/>
+              </svg>
+            </button>
+
+            {/* Loop */}
+            <button
+              onClick={cycleLoop}
+              className={`w-10 h-10 flex items-center justify-center rounded-full text-text-muted transition-colors relative ${loopMode !== LOOP.NONE ? 'text-accent bg-accent bg-opacity-10' : ''}`}
+            >
+              {loopMode === LOOP.ONE ? (
+                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M7 7h10v3l4-4-4-4v3H5v6h2V7zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2v4zm-4-2V9h-1l-2 1v1h1.5v4H13z"/>
+                </svg>
+              ) : (
+                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M7 7h10v3l4-4-4-4v3H5v6h2V7zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2v4z"/>
+                </svg>
+              )}
+            </button>
+          </div>
+
+          {/* Volume Control Row */}
+          <div className="flex items-center gap-3 bg-card border border-border px-4 py-3 rounded-2xl">
+            <button onClick={handleMute} className="text-text-muted">
+              {isMuted || volume === 0 ? (
+                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z"/>
+                </svg>
+              ) : (
+                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/>
+                </svg>
+              )}
+            </button>
+            <input
+              type="range"
+              min="0"
+              max="100"
+              value={isMuted ? 0 : volume}
+              onChange={handleVolumeChange}
+              className="flex-1 h-1"
+              style={{
+                background: `linear-gradient(to right, #ffffff ${isMuted ? 0 : volume}%, #2a2a2a ${isMuted ? 0 : volume}%)`
+              }}
+            />
+            <span className="text-xs text-text-muted w-6 text-right">{isMuted ? 0 : volume}</span>
+          </div>
+        </div>
+      )}
+
       {/* Hidden audio element playing silent WAV to keep background audio context active */}
       <audio
         ref={silentAudioRef}

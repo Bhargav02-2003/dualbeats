@@ -126,10 +126,10 @@ const QueueList = ({ queue, currentIdx, onPlay, onPlayAll, onRemove, onClear }) 
                     </span>
                   )}
 
-                  {/* Remove — show on hover */}
+                  {/* Remove — show on hover on desktop, always show on mobile */}
                   <button
                     onClick={(e) => { e.stopPropagation(); onRemove(idx); }}
-                    className="flex-shrink-0 p-1 rounded-lg text-text-muted hover:text-error hover:bg-error hover:bg-opacity-10 transition-all opacity-0 group-hover:opacity-100"
+                    className="flex-shrink-0 p-1 rounded-lg text-text-muted hover:text-error hover:bg-error hover:bg-opacity-10 transition-all opacity-100 lg:opacity-0 lg:group-hover:opacity-100"
                     title="Remove from queue"
                   >
                     <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

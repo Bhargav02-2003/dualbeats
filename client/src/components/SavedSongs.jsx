@@ -162,8 +162,8 @@ const SavedSongs = ({ onPlay, onPlayAll, onAddToQueue, refreshTrigger, savedVide
                     <span className="text-text-muted text-xs flex-shrink-0 opacity-70 hidden sm:block">{song.duration}</span>
                   )}
 
-                  {/* Action buttons — visible on hover */}
-                  <div className="flex-shrink-0 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                  {/* Action buttons — visible on hover on desktop, always visible on mobile */}
+                  <div className="flex-shrink-0 flex items-center gap-1 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity">
                     {/* Add to Queue */}
                     {onAddToQueue && (
                       <button

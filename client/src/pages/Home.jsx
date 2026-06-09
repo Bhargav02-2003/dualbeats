@@ -30,9 +30,22 @@ const Home = () => {
   const [syncedVideo, setSyncedVideo] = useState(null);
   const socketRef = useRef(null);
 
-  // ── Mobile tab state for Player / Chat ──────────────────────────────────────
-  const [mobileTab, setMobileTab] = useState('player'); // 'player' | 'chat'
+  // ── Mobile tab state for Home / Chat / Queue ────────────────────────────────
+  const [mobileTab, setMobileTab] = useState('home'); // 'home' | 'chat' | 'queue'
   const [chatUnread, setChatUnread] = useState(0);
+  const [isLargeScreen, setIsLargeScreen] = useState(window.innerWidth >= 1024);
+
+  useEffect(() => {
+    const handleResize = () => setIsLargeScreen(window.innerWidth >= 1024);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  const handleMessageReceived = useCallback((msg) => {
+    if (mobileTab !== 'chat') {
+      setChatUnread((prev) => prev + 1);
+    }
+  }, [mobileTab]);
 
   // ── Active video (lifted from PlayerPanel for suggestions) ────────────
   const [activeVideo, setActiveVideo] = useState(null);
@@ -296,7 +309,7 @@ const Home = () => {
       <main className="flex-1 flex flex-col lg:flex-row overflow-hidden">
 
         {/* ── Left sidebar — Player Panel (sticky on desktop) ── */}
-        <aside className="lg:w-[380px] xl:w-[420px] flex-shrink-0 p-3 lg:h-[calc(100vh-56px)] lg:sticky lg:top-14 lg:overflow-y-auto">
+        <aside className="lg:w-[380px] xl:w-[420px] flex-shrink-0 lg:p-3 lg:h-[calc(100vh-56px)] lg:sticky lg:top-14 lg:overflow-y-auto">
           <PlayerPanel
             socket={socket}
             roomCode={roomCode}
@@ -312,6 +325,7 @@ const Home = () => {
             onPlayFromQueue={playFromQueue}
             activeVideo={activeVideo}
             onActiveVideoChange={setActiveVideo}
+            activeMobileTab={mobileTab}
           />
 
           {/* Queue (desktop sidebar) */}
@@ -328,8 +342,10 @@ const Home = () => {
         </aside>
 
         {/* ── Center — main content ── */}
-        <section className="flex-1 overflow-y-auto p-4 lg:pl-2 lg:pr-6 lg:pt-5">
-
+        <section className={`
+          flex-1 overflow-y-auto p-4 lg:pl-2 lg:pr-6 lg:pt-5
+          ${mobileTab === 'home' ? 'block' : 'hidden lg:block'}
+        `}>
           {/* Room sync info strip */}
           {roomInfo && (
             <div className="flex items-center gap-2 mb-5 text-sm text-text-secondary bg-accentMuted border border-accent border-opacity-20 rounded-full px-4 py-2 w-fit">
@@ -337,6 +353,9 @@ const Home = () => {
               <span>Synced room <strong className="text-accent">{roomInfo.code}</strong> — {roomInfo.userCount} listening</span>
             </div>
           )}
+
+          {/* Spacer for fixed SearchBar on mobile */}
+          <div className="h-16 lg:hidden" />
 
           {/* Trending + Suggestions */}
           <TrendingSection
@@ -349,7 +368,7 @@ const Home = () => {
           />
 
           {/* My Library */}
-          <div className="mt-8">
+          <div className="mt-8 pb-28 lg:pb-0">
             <SavedSongs
               onPlay={handlePlayFromExternal}
               onPlayAll={handlePlayAllFromLibrary}
@@ -361,8 +380,39 @@ const Home = () => {
           </div>
         </section>
 
+        {/* ── Mobile Queue Tab view ── */}
+        {!isLargeScreen && mobileTab === 'queue' && (
+          <div className={`flex-1 overflow-y-auto p-4 pt-16 ${
+            activeVideo ? 'pb-32' : 'pb-20'
+          }`}>
+            <QueueList
+              queue={queue}
+              currentIdx={currentQueueIdx}
+              onPlay={playFromQueue}
+              onPlayAll={handlePlayAllFromQueue}
+              onRemove={removeFromQueue}
+              onClear={clearQueue}
+            />
+          </div>
+        )}
+
+        {/* ── Mobile Chat Tab view (Mounted persistently to preserve background messages) ── */}
+        {!isLargeScreen && roomCode && (
+          <div className={`fixed top-14 left-0 right-0 z-30 flex flex-col bg-[#0f0f0f] ${
+            activeVideo ? 'bottom-[116px]' : 'bottom-[52px]'
+          } ${mobileTab === 'chat' ? '' : 'hidden'}`}>
+            <ChatPanel
+              socket={socket}
+              roomCode={roomCode}
+              currentUser={user}
+              roomInfo={roomInfo}
+              onMessageReceived={handleMessageReceived}
+            />
+          </div>
+        )}
+
         {/* ── Desktop Chat Panel — only visible when in a room ── */}
-        {roomCode && (
+        {isLargeScreen && roomCode && (
           <aside className="hidden lg:flex flex-col w-[340px] xl:w-[380px] flex-shrink-0 h-[calc(100vh-56px)] sticky top-14 border-l border-[#2a2a2a]">
             <ChatPanel
               socket={socket}
@@ -373,75 +423,52 @@ const Home = () => {
           </aside>
         )}
 
-        {/* ── Mobile bottom tabs (Player / Chat / Queue) ── */}
-        <div className="lg:hidden fixed bottom-0 left-0 right-0 z-40">
-          {roomCode ? (
-            <div className="bg-card border-t border-border flex">
-              <button
-                onClick={() => setMobileTab('player')}
-                className={`flex-1 py-3 flex items-center justify-center gap-1.5 text-sm font-medium transition-colors ${mobileTab === 'player' ? 'text-accent' : 'text-text-secondary'}`}
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                Player
-              </button>
+        {/* ── Mobile bottom navigation bar ── */}
+        {!isLargeScreen && (
+          <div className="fixed bottom-0 left-0 right-0 z-40 bg-card border-t border-border h-[52px] flex items-center justify-around">
+            <button
+              onClick={() => setMobileTab('home')}
+              className={`flex flex-col items-center justify-center w-16 h-full transition-colors ${mobileTab === 'home' ? 'text-accent' : 'text-text-secondary'}`}
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+              </svg>
+              <span className="text-[9px] font-bold mt-0.5 uppercase tracking-wider">Home</span>
+            </button>
+
+            <button
+              onClick={() => setMobileTab('queue')}
+              className={`flex flex-col items-center justify-center w-16 h-full transition-colors relative ${mobileTab === 'queue' ? 'text-accent' : 'text-text-secondary'}`}
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h10" />
+              </svg>
+              <span className="text-[9px] font-bold mt-0.5 uppercase tracking-wider">Queue</span>
+              {queue.length > 0 && (
+                <span className="absolute top-1 right-3 bg-accent text-white text-[9px] font-bold rounded-full w-4 h-4 flex items-center justify-center">
+                  {queue.length}
+                </span>
+              )}
+            </button>
+
+            {roomCode && (
               <button
                 onClick={() => { setMobileTab('chat'); setChatUnread(0); }}
-                className={`flex-1 py-3 flex items-center justify-center gap-1.5 text-sm font-medium transition-colors relative ${mobileTab === 'chat' ? 'text-accent' : 'text-text-secondary'}`}
+                className={`flex flex-col items-center justify-center w-16 h-full transition-colors relative ${mobileTab === 'chat' ? 'text-accent' : 'text-text-secondary'}`}
               >
-                💬 Chat
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                </svg>
+                <span className="text-[9px] font-bold mt-0.5 uppercase tracking-wider">Chat</span>
                 {chatUnread > 0 && (
-                  <span className="absolute top-1.5 right-6 bg-red-500 text-white text-[10px] font-bold rounded-full min-w-[16px] h-4 flex items-center justify-center px-1">
+                  <span className="absolute top-1 right-3 bg-accent text-white text-[9px] font-bold rounded-full w-4 h-4 flex items-center justify-center">
                     {chatUnread}
                   </span>
                 )}
               </button>
-              <button
-                onClick={() => setShowQueue((v) => !v)}
-                className="flex-1 py-3 flex items-center justify-center gap-1.5 text-sm text-text-secondary"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h10" />
-                </svg>
-                Queue
-              </button>
-            </div>
-          ) : (
-            <button
-              onClick={() => setShowQueue((v) => !v)}
-              className="w-full bg-card border-t border-border py-3 flex items-center justify-center gap-2 text-sm text-text-secondary"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h10" />
-              </svg>
-              Queue ({queue.length})
-            </button>
-          )}
-          {roomCode && mobileTab === 'chat' && (
-            <div className="fixed inset-0 bottom-12 bg-[#0f0f0f] z-50 flex flex-col">
-              <ChatPanel
-                socket={socket}
-                roomCode={roomCode}
-                currentUser={user}
-                roomInfo={roomInfo}
-              />
-            </div>
-          )}
-          {showQueue && (
-            <div className="bg-bg border-t border-border max-h-64 overflow-y-auto animate-slide-up">
-              <QueueList
-                queue={queue}
-                currentIdx={currentQueueIdx}
-                onPlay={playFromQueue}
-                onPlayAll={handlePlayAllFromQueue}
-                onRemove={removeFromQueue}
-                onClear={clearQueue}
-              />
-            </div>
-          )}
-        </div>
+            )}
+          </div>
+        )}
       </main>
 
       {/* ── Modals ── */}
